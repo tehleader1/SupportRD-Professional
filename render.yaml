@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: supportrd-clean-production
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app

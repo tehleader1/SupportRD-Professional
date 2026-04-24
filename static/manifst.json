@@ -1,0 +1,8 @@
+{
+"name":"SupportRD",
+"short_name":"SupportRD",
+"display":"standalone",
+"start_url":"/",
+"background_color":"#000000",
+"theme_color":"#000000"
+}
