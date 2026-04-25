@@ -1,10 +1,30 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
-<title>Map Change</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SupportRD | Map Change</title>
+  <style>
+    body{margin:0;min-height:100vh;background:#06101f;color:#fff;font-family:Inter,system-ui,sans-serif;}
+    .page{min-height:100vh;display:grid;grid-template-columns:.9fr 1.1fr;background:linear-gradient(145deg,rgba(6,16,31,.96),rgba(11,34,54,.92));}
+    .media{background:url('/static/images/pass24/hija_felix.jpeg') center/cover;min-height:100vh;}
+    .copy{display:grid;align-content:center;gap:1rem;padding:clamp(1rem,5vw,4rem);}
+    span{color:#13b7c7;text-transform:uppercase;letter-spacing:.14em;font-weight:900;}
+    h1{font-size:clamp(3rem,8vw,7rem);line-height:.9;margin:0;letter-spacing:-.08em;}
+    p{font-size:1.2rem;line-height:1.6;color:rgba(255,255,255,.78);max-width:56rem;}
+    .card{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.07);border-radius:1.5rem;padding:1rem;}
+    @media(max-width:850px){.page{grid-template-columns:1fr;}.media{min-height:42vh;}}
+  </style>
 </head>
 <body>
-<h1>Map Change</h1>
-<p>Theme, perks, behavior control.</p>
+  <main class="page">
+    <section class="media" aria-label="Map Change image"></section>
+    <section class="copy">
+      <span>SupportRD Remote</span>
+      <h1>Map Change</h1>
+      <p>Swimming Hole, Snow Mountain Pass, Autumn Trail, Desert Cliff, Blissful Geysers, and Chocolate Factory perks.</p>
+      <div class="card">This route is ready for fullscreen Remote operation and can be deepened with live API data after deployment.</div>
+    </section>
+  </main>
 </body>
 </html>
