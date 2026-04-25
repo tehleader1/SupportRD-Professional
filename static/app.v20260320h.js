@@ -1,5 +1,5 @@
 document.addEventListener("DOMContentLoaded", () => {
-  if (typeof openRoute === "function") {
-    openRoute("diary");
+  if (window.SupportRDRebuild?.initCommerceRank) {
+    window.SupportRDRebuild.initCommerceRank();
   }
 });
