@@ -76,15 +76,40 @@
     return id === 'jake' ? 'Jake' : 'ARIA';
   }
 
+  function classifyIntent(transcript){
+    const t = String(transcript || '').toLowerCase();
+    if (/premium|inner circle|voice|membership/.test(t)) return 'Inner Circle';
+    if (/professional|making money|pro|rank|business|sell|payment|shopify|money/.test(t)) return 'Professional/Making Money';
+    if (/hair|dry|wet|fall|growth|conditioner|shampoo|mask|dropper|gotero|product|scalp|breakage|dandruff/.test(t)) return 'Advanced';
+    return 'Greeting';
+  }
+
+  const PRODUCT_PRICES = [
+    'Studio Jake Premium: $100/mo',
+    'Premium Inner Circle: $35/mo',
+    'Professional / Making Money Pro: $50/mo',
+    'Support Full Product Line: Shop catalog',
+    'Bright Droplets: Shop catalog',
+    'Exclusive Formula Anti-Fall: Shop catalog',
+    'Lacceador Crece: Shop catalog',
+    'Shampoo: Shop catalog',
+    'Mascarilla / Mask: Shop catalog'
+  ];
+
   function buildFallbackReply(id, transcript){
     const clean = String(transcript || '').trim();
-    if (!clean) {
-      return `${assistantName(id)} is listening. I did not catch words yet, but I am ready when you speak again.`;
+    const category = classifyIntent(clean);
+    const prices = PRODUCT_PRICES.join('; ');
+    if (category === 'Greeting') {
+      return `${assistantName(id)} Greeting: How may I help you? I can help with hair problems, products, Diary history, Studio, Profile, Catalog, Premium, Inner Circle, or Professional/Making Money. Prices: ${prices}.`;
     }
-    if (id === 'jake') {
-      return `Jake heard: ${clean}. Studio check: confirm adlib, beat-to-vocal alignment, FX memory, and export the correct .wav file.`;
+    if (category === 'Advanced') {
+      return `${assistantName(id)} Advanced hair problem response: I heard "${clean || 'your hair concern'}". Tell me if the issue is dry hair, wet-care, hair fall, scalp, growth, shine, or styling. Product prices and links are available in Catalog. Prices: ${prices}.`;
     }
-    return `ARIA heard: ${clean}. Hair support check: I can route this to Diary history, Profile analysis, Catalog products, or Map Change perks.`;
+    if (category === 'Inner Circle') {
+      return `${assistantName(id)} Inner Circle: Premium Inner Circle is $35/mo and gives premium ARIA support, profile credibility, and guided hair/account flow. I can route you to Catalog now. Prices: ${prices}.`;
+    }
+    return `${assistantName(id)} Professional/Making Money: Pro is $50/mo and builds Professional/Making Money seriousness with Aria Voice, catalog/payment intent, rank, and business follow-through. Studio Jake Premium is $100/mo. Prices: ${prices}.`;
   }
 
   async function askBackend(id, transcript){
@@ -119,11 +144,11 @@
 
   function beginSilenceCountdown(id){
     if (silenceTimer) clearTimeout(silenceTimer);
-    patch({ status:'2 second pause silence' });
+    patch({ status:'3 second open mic listening window' });
     silenceTimer = setTimeout(()=>{
       if (!active) return;
       patch({ status:'transcribing listening' });
-    }, 2000);
+    }, 3200);
   }
 
   function startRecognition(id){
@@ -161,6 +186,7 @@
         const state = read();
         const history = [{ assistant:id, transcript:finalText.trim(), reply, at:new Date().toISOString() }, ...(state.history || [])].slice(0, 50);
         patch({ status:'ai reply', reply, history });
+        try{ window.SupportRDRebuild?.recordDiaryAssistantHistory?.(id, finalText.trim(), reply); }catch{}
         speak(reply, ()=>{
           playTone('outro');
           patch({ status:'complete' });
@@ -231,12 +257,16 @@
         <div class="${state.status === 'intro sound' ? 'active' : ''}">1. Intro sound</div>
         <div class="${state.status === 'How may I help you?' ? 'active' : ''}">2. “How may I help you?”</div>
         <div class="${state.status === 'open mic' ? 'active' : ''}">3. Open mic</div>
-        <div class="${state.status === '2 second pause silence' ? 'active' : ''}">4. 2 second pause silence</div>
+        <div class="${state.status === '3 second open mic listening window' ? 'active' : ''}">4. 3 second open mic</div>
         <div class="${/listening|transcribing/.test(state.status) ? 'active' : ''}">5. Transcribing / listening</div>
         <div class="${state.status === 'ai reply' ? 'active' : ''}">6. AI reply + outro</div>
       </div>
-      <div class="sr-voice-box"><b>Transcript</b><p>${state.transcript || 'Waiting for microphone input...'}</p></div>
-      <div class="sr-voice-box"><b>Reply</b><p>${state.reply || 'Click ARIA or Jake to begin.'}</p></div>
+      <details class="sr-voice-box sr-transcript-hidden">
+        <summary>Voice details</summary>
+        <b>Transcript</b><p>${state.transcript || 'Waiting for microphone input...'}</p>
+        <b>Reply</b><p>${state.reply || 'Click ARIA or Jake to begin.'}</p>
+      </details>
+      <div class="sr-voice-current-reply"><b>Assistant Reply</b><p>${state.reply || 'Click ARIA or Jake to begin.'}</p></div>
       <div class="sr-voice-actions">
         <button class="sr-buy-btn" type="button" data-voice-start="aria">Start ARIA Mic</button>
         <button class="sr-mini-btn" type="button" data-voice-start="jake">Start Jake Mic</button>
