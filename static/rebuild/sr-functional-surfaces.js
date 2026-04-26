@@ -36,163 +36,103 @@
   }
 
   function renderProfile(){
-    const state = read();
-    const summary = state.profileSummary || 'Upload or scan a hair image to create an AI prep summary. This builds Profile credibility and can route back to Diary history.';
-    return panelShell('profile','AI PREP + HAIR SCANNER','Profile Scanner Room','Profile is now a working prep room: hair image scan, AI prep summary, seriousness image, and profile notes.',`
-      <section class="sr-room-grid">
-        <article class="sr-room-card">
-          <h3>Actual Hair Scanner</h3>
-          <input class="sr-file-input" type="file" accept="image/*" data-profile-image>
-          <div class="sr-preview-box" id="profileScanPreview">${state.profileImage ? `<img src="${state.profileImage}" alt="Hair scan preview">` : 'No scan image yet.'}</div>
-          <button class="sr-buy-btn" type="button" data-profile-scan>Run Hair Scan</button>
-        </article>
-        <article class="sr-room-card">
-          <h3>AI Prep Summary Room</h3>
-          <textarea data-profile-notes placeholder="Describe hair condition, goals, products used, scalp/wet/dry condition...">${esc(state.profileNotes || '')}</textarea>
-          <button class="sr-mini-btn" type="button" data-profile-prep>Generate Prep Summary</button>
-          <div class="sr-output-box" id="profilePrepSummary">${esc(summary)}</div>
-        </article>
-        <article class="sr-room-card">
-          <h3>Serious Profile Image</h3>
-          <p>This image can be used as a serious trust/profile review surface. Use it for credibility, not false identity/background claims.</p>
-          <button class="sr-mini-btn sr-settings-btn" type="button" data-route="diary">Open Hair History in Diary</button>
-        </article>
-      </section>
+    return panelShell('profile','CAMERA HAIR ANALYSIS','Profile — Open Camera Hair Analysis','Look left and look right — your camera runs live AI hair analysis, gives spoken results, and saves confirmed hair status to your account history.',`
+      <div id="srHairAnalysisRoom" style="min-height:200px;"><p style="color:#888;padding:1rem;">Loading hair analysis room…</p></div>
     `, root.assets?.proGirl);
   }
 
   function renderDiary(){
-    const state = read();
-    const comments = state.diaryComments || [];
-    const payments = state.diaryPayments || [];
-    return panelShell('diary','LIVE ROOM + GUEST PAYMENTS','Diary Live Room','Diary now works like a live room: guests can comment, add support payments, and prepare social posts with files.',`
-      <section class="sr-room-grid">
-        <article class="sr-room-card sr-live-room">
-          <h3>Live Feature</h3>
-          <div class="sr-live-badge">LIVE READY</div>
-          <p>Open comments, support/tip intent, social posting prep, and hands-free ARIA history.</p>
-          <input type="file" multiple accept="image/*,video/*" data-diary-files>
-          <textarea data-social-post placeholder="Write a post for X, FB, IG, Reddit, Tumblr, TikTok...">${esc(state.socialPost || '')}</textarea>
-          <button class="sr-buy-btn" data-social-save type="button">Save Social Post + Files</button>
-        </article>
-        <article class="sr-room-card">
-          <h3>Guest Comments</h3>
-          <div class="sr-comment-list" id="diaryCommentList">${comments.map(c=>`<div><strong>${esc(c.name)}</strong><p>${esc(c.text)}</p><small>${esc(c.at)}</small></div>`).join('') || '<p>No comments yet.</p>'}</div>
-          <input data-comment-name placeholder="Guest name">
-          <textarea data-comment-text placeholder="Write comment..."></textarea>
-          <button class="sr-mini-btn" data-comment-add type="button">Post Comment</button>
-        </article>
-        <article class="sr-room-card">
-          <h3>Guest Payments / Tips</h3>
-          <div class="sr-payment-list">${payments.map(p=>`<div><strong>$${esc(p.amount)}</strong><span>${esc(p.name)} — ${esc(p.reason)}</span></div>`).join('') || '<p>No support payments yet.</p>'}</div>
-          <input data-pay-name placeholder="Guest name">
-          <input data-pay-amount type="number" min="1" step="1" placeholder="Amount">
-          <input data-pay-reason placeholder="Reason: tip/support/product">
-          <button class="sr-buy-btn" data-pay-add type="button">Add Guest Payment</button>
-        </article>
-        <article class="sr-room-card">
-          <h3>Aria/Jake Conversation History</h3>
-          <div class="sr-output-box">${(JSON.parse(localStorage.getItem('srVoiceAssistantStateV25') || '{}').history || []).slice(0,5).map(h=>`<div><b>${esc(h.assistant)}</b>: ${esc(h.transcript)}<br><small>${esc(h.reply)}</small></div>`).join('') || 'No assistant history yet.'}</div>
-          <button class="sr-mini-btn" data-route="aria" type="button">Hands-Free ARIA</button>
-        </article>
-      </section>
+    return panelShell('diary','LIVE WEBCAM ROOM','Diary — Live Room','Real webcam, live comments, hearts, Stripe guest tips linked to your account, hands-free ARIA, and Aria/Jake history in Diary history.',`
+      <div id="srDiaryLiveRoom" style="min-height:200px;"><p style="color:#888;padding:1rem;">Loading live room…</p></div>
     `, root.assets?.healthyHair);
   }
 
   function renderStudio(){
-    const state = read();
-    const checks = state.studioChecks || {};
-    return panelShell('studio','FINISHED STUDIO ROOM','.wav Studio Export Room','Studio is now a working creation room: motherboard creation notes, audio import, adlib/beat alignment, FX memory, and export checklist.',`
-      <section class="sr-room-grid">
-        <article class="sr-room-card">
-          <h3>Audio Session</h3>
-          <input type="file" accept="audio/*,.wav" data-studio-audio>
-          <div class="sr-output-box">${state.studioAudioName ? `Loaded: ${esc(state.studioAudioName)}` : 'No audio loaded yet.'}</div>
-          <textarea data-studio-notes placeholder="Motherboard creation notes, session goal, export name...">${esc(state.studioNotes || '')}</textarea>
-        </article>
-        <article class="sr-room-card">
-          <h3>Jake Export Checklist</h3>
-          ${['adlib','beatVocal','fx','wav','correctFile'].map(key=>`
-            <label class="sr-check-row"><input type="checkbox" data-studio-check="${key}" ${checks[key]?'checked':''}> ${{
-              adlib:'Adlib confirmed',
-              beatVocal:'Beat-to-vocal lined up',
-              fx:'FX effect remembered',
-              wav:'.wav export ready',
-              correctFile:'Correct file exported'
-            }[key]}</label>
-          `).join('')}
-          <button class="sr-buy-btn" data-studio-save type="button">Save Studio Session</button>
-        </article>
-        <article class="sr-room-card">
-          <h3>Export Summary</h3>
-          <div class="sr-output-box" id="studioExportSummary">${esc(state.studioSummary || 'Complete checklist and save to generate the export summary.')}</div>
-          <button class="sr-mini-btn" data-route="jake" type="button">Ask Jake</button>
-        </article>
-      </section>
+    return panelShell('studio','STUDIO MOTHERBOARD','Studio — Import/Export/Play','Real MP3/M4A import, waveform motherboard with clickable tracks, highlight/cut/delete, export, and last 3 exports saved to your account.',`
+      <div id="srMotherboardContainer" style="min-height:200px;"><p style="color:#888;padding:1rem;">Loading studio…</p></div>
     `, root.assets?.studioJake);
   }
 
   function renderFaq(){
     const faqs = [
-      ['What is SupportRD?', 'A hair solution remote for products, AI guidance, Diary, Studio, Profile, FAQ, Catalog, and Market Reader.'],
+      ['What is SupportRD?', 'A hair solution remote for products, AI guidance, Diary, Studio, Profile, FAQ, Catalog, and Market Laser.'],
       ['What does ARIA do?', 'ARIA handles hair guidance, prep summaries, map behavior, and hands-free conversation.'],
       ['What does Jake do?', 'Jake handles Studio execution, FX memory, adlib checks, alignment, and export discipline.'],
-      ['Can guests pay someone live?', 'Diary has guest support payment intent; connect Shopify/payment backend for real transactions.'],
-      ['How does Market Laser work?', 'It reads Workday SEO, Shopify finance, public pulse, map behavior, and catalog payment intent.']
+      ['Can guests pay live?', 'Yes — Diary has a real Stripe guest tip link that records payments to your account.'],
+      ['How does Market Laser work?', 'Links to market-do8p.onrender.com. Paid $25,000 Live Signals account gets live signal access.'],
+      ['How does hair analysis work?', 'Profile opens your camera. Look left and right — Claude AI analyzes your hair, speaks results, and saves to account history.'],
+      ['What maps are available?', 'Wellness, Studio, Market, Diary, and Premium maps — each gives an account perk.'],
+      ['Is everything account-connected?', 'Yes. Diary, Profile, FAQ, Studio, Map, and Market all connect back to your account backbone.']
     ];
-    return panelShell('faq','10 SECOND REEL + ACTUAL FAQS','FAQ Lounge','FAQ Lounge now has a 10-second TikTok-style hair reel storyboard and real FAQ cards.',`
+    return panelShell('faq','FAQ + TIKTOK REEL + DEVS FEED','FAQ Lounge','Real FAQs, 10-second TikTok hair reel, and Developer Feed — post comments and ratings, all saved to your account.',`
       <section class="sr-room-grid">
         <article class="sr-room-card sr-reel-card">
-          <h3>10 Second TikTok Hair Reel</h3>
-          <div class="sr-reel-stage" id="reelStage">
-            <img src="${root.assets?.brightDroplets || ''}" alt="Hair reel visual">
-            <strong id="reelText">0-2s: Hook — Have healthy hair.</strong>
+          <h3>10-Second TikTok Hair Reel</h3>
+          <div id="srTikTokReelContainer" style="min-height:180px;display:flex;align-items:center;justify-content:center;">
+            <p style="color:#888;font-size:.85rem;">Loading reel…</p>
           </div>
-          <button class="sr-buy-btn" data-reel-play type="button">Play 10s Reel</button>
         </article>
         <article class="sr-room-card">
           <h3>Actual FAQs</h3>
           <div class="sr-faq-list">${faqs.map(([q,a])=>`<details><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join('')}</div>
         </article>
         <article class="sr-room-card">
-          <h3>Recent Works / Mentions</h3>
-          <p>Use this lane for TikTok, reels, featured mentions, and proof from other websites. Keep unverified mentions out until confirmed.</p>
-          <button class="sr-mini-btn" data-route="market" type="button">Scan Market Laser</button>
+          <h3>Developer Feed + Mentions</h3>
+          <textarea id="srFaqDevText" placeholder="Post live developer comment or SupportRD mention found online…" rows="3" style="width:100%;resize:vertical;margin-bottom:.4rem;"></textarea>
+          <input id="srFaqRating" type="number" min="1" max="5" placeholder="Rating 1-5" style="width:100%;margin-bottom:.4rem;">
+          <button id="srFaqDevPostBtn" class="sr-buy-btn" type="button">Post to Developer Feed</button>
+          <div id="srFaqFeedList" style="margin-top:.75rem;max-height:200px;overflow-y:auto;"></div>
         </article>
       </section>
     `, root.assets?.dayparty);
   }
 
   function renderMarket(){
-    return panelShell('market','RENDER MARKET LINK','Market Laser','Market Laser now points at the live Render market app and keeps the reader identifiers visible.',`
+    return panelShell('market','MARKET LASER — LIVE SIGNALS','Market Laser — Connect Your Account','Link your market-do8p.onrender.com account. Paid $25,000 Live Signals tier unlocks live signals. Account link and map perks are saved to your backbone.',`
       <section class="sr-room-grid">
         <article class="sr-room-card">
-          <h3>Live Market App</h3>
-          <p>Target market system:</p>
-          <a class="sr-buy-btn" href="${MARKET_URL}" target="_blank" rel="noopener">Open market-do8p.onrender.com</a>
-          <p class="sr-small-note">Some hosts block iframe embedding. Open in new tab is the safest live behavior.</p>
+          <h3>Connect Market Login</h3>
+          <input data-market-email placeholder="Market login email" style="width:100%;margin-bottom:.4rem;">
+          <label class="sr-check-row"><input data-market-paid type="checkbox"> $25,000 Live Signals paid account</label>
+          <button class="sr-buy-btn" style="margin-top:.5rem;" type="button" data-market-login-save>Connect Market Login</button>
+          <button class="sr-mini-btn" style="margin-top:.4rem;" type="button" onclick="window.SupportRDRebuild&&window.SupportRDRebuild.marketLaser&&window.SupportRDRebuild.marketLaser.openMarket()">Open market-do8p.onrender.com</button>
         </article>
         <article class="sr-room-card">
-          <h3>Laser Identifiers</h3>
-          <div class="sr-faq-list">
-            <details open><summary>workday-seo-laser</summary><p>Reads workday SEO rhythm and posting direction.</p></details>
-            <details><summary>shopify-finance-reader</summary><p>Reads Shopify endpoint/payment readiness once connected.</p></details>
-            <details><summary>public-pulse-reader</summary><p>Reads public signal fallback.</p></details>
-            <details><summary>map-surface-laser</summary><p>Reads active map, perk, and surface behavior.</p></details>
-            <details><summary>catalog-payment-reader</summary><p>Reads product intent and Making Money seriousness.</p></details>
-          </div>
+          <h3>Account Link Status</h3>
+          <div id="srMarketStatus"><p style="color:#888;font-size:.85rem;">Loading status…</p></div>
         </article>
-        <article class="sr-room-card sr-market-frame-card">
-          <h3>Market Preview</h3>
-          <iframe src="${MARKET_URL}" title="Market Laser Preview" loading="lazy"></iframe>
+        <article class="sr-room-card">
+          <h3>Map Perks (Account Linked)</h3>
+          <div id="srMapPerksContainer"><p style="color:#888;font-size:.85rem;">Loading perks…</p></div>
         </article>
       </section>
     `, root.assets?.artists);
   }
 
   function renderSettings(){
-    return panelShell('settings','ACCOUNT + ADMIN','Settings','Settings controls account options, history, seriousness ratings, protection status, and admin visibility.',`
+    const login = getLoginState();
+    const confirmed = login.email ? `^^ ${esc(login.username || 'DYGENRJE')}<br>${esc(login.email)}<br>${esc(login.tier || 'Premium / Pro')}` : 'Not confirmed yet.';
+    return panelShell('settings','ACCOUNT ACCESS','Settings / Login','Settings controls account options, history, seriousness ratings, protection status, and admin visibility without blocking the page.',`
       <section class="sr-room-grid">
+        <article class="sr-room-card">
+          <h3>In-Panel Login</h3>
+          <p>This does not block the app. Save account info so SupportRD stays attached while moving around the site.</p>
+          <input data-login-username placeholder="Username / tag" value="${esc(login.username || '')}">
+          <input data-login-email placeholder="Email address" value="${esc(login.email || '')}">
+          <input data-login-password type="password" placeholder="Password" value="${esc(login.password || '')}">
+          <select data-login-tier>
+            <option ${login.tier === 'Premium' ? 'selected' : ''}>Premium</option>
+            <option ${login.tier === 'Pro' ? 'selected' : ''}>Pro</option>
+            <option ${login.tier === 'Premium / Pro' ? 'selected' : ''}>Premium / Pro</option>
+          </select>
+          <button class="sr-buy-btn" data-login-save type="button">Save Login</button>
+          <button class="sr-mini-btn" data-login-provider type="button">Confirm Provider</button>
+        </article>
+        <article class="sr-room-card">
+          <h3>Confirmed Account Tag</h3>
+          <div class="sr-output-box">${confirmed}</div>
+          <p>Once logged in, this confirms Username, Email, and ^^tag confirmed - Premium or Pro.</p>
+        </article>
         <article class="sr-room-card">
           <h3>Account Seriousness</h3>
           <button class="sr-buy-btn" data-action="serious" type="button">Mark Taking It Serious</button>
@@ -237,7 +177,7 @@
     const map = { profile:renderProfile, diary:renderDiary, studio:renderStudio, faq:renderFaq, market:renderMarket, settings:renderSettings, aria:renderAria, jake:renderJake };
     if (map[route]) stage.innerHTML = map[route]();
     else if (route === 'catalog' && root.renderPanel) return root.renderPanel('catalog');
-    else if (route === 'map' && root.renderPanel) return root.renderPanel('map');
+    else if (route === 'map' && root.renderPanel) { try{ root.recordMapChoice?.('Map Change opened', 'recent map/perks reviewed'); }catch{} return root.renderPanel('map'); }
     else stage.innerHTML = renderDiary();
     try { root.bumpCommerceRank?.(route === 'catalog' ? 'makingMoney' : 'professional', 1); } catch {}
   }
@@ -247,12 +187,12 @@
       const profileFile = event.target.closest('[data-profile-image]');
       if (profileFile && profileFile.files?.[0]) {
         const reader = new FileReader();
-        reader.onload = () => { patch({ profileImage: reader.result }); functionalRenderPanel('profile'); };
+        reader.onload = () => { patch({ profileImage: reader.result }); try{ root.recordProfileImage?.(reader.result); }catch{} functionalRenderPanel('profile'); };
         reader.readAsDataURL(profileFile.files[0]);
       }
       const studioFile = event.target.closest('[data-studio-audio]');
       if (studioFile && studioFile.files?.[0]) {
-        patch({ studioAudioName: studioFile.files[0].name });
+        patch({ studioAudioName: studioFile.files[0].name }); try{ root.recordStudioImport?.({ file:studioFile.files[0].name }); }catch{}
         functionalRenderPanel('studio');
       }
       const check = event.target.closest('[data-studio-check]');
@@ -264,16 +204,25 @@
     });
 
     document.addEventListener('click', event=>{
+      if (event.target.closest('[data-market-login-save]')) {
+        const email = document.querySelector('[data-market-email]')?.value || '';
+        const paid = !!document.querySelector('[data-market-paid]')?.checked;
+        try{ root.linkMarketAccount?.(email, paid); }catch{}
+        functionalRenderPanel('market');
+      }
+
       if (event.target.closest('[data-profile-scan]')) {
         const state = read();
         const notes = document.querySelector('[data-profile-notes]')?.value || state.profileNotes || '';
         patch({ profileNotes:notes, profileSummary:`AI Prep Summary: hair image/notes reviewed. Focus on ${notes || 'hair condition, credibility, and next Diary history check'}. Recommended next step: save analysis in Diary and review product fit in Catalog.` });
+        try{ root.recordHairAnalysis?.({ status:'AI prep summary recorded', summary:read().profileSummary || 'Hair analysis recorded', notes }); }catch{}
         functionalRenderPanel('profile');
       }
 
       if (event.target.closest('[data-profile-prep]')) {
         const notes = document.querySelector('[data-profile-notes]')?.value || '';
         patch({ profileNotes:notes, profileSummary:`Prep Room Summary: ${notes || 'No notes added yet.'} ARIA should ask follow-up questions, check wet/dry condition, and route serious findings to Diary history.` });
+        try{ root.recordHairAnalysis?.({ status:'Confirmed Hair Status: prep complete', summary:read().profileSummary || 'Prep summary recorded', notes }); }catch{}
         functionalRenderPanel('profile');
       }
 
@@ -282,7 +231,7 @@
         const name = document.querySelector('[data-comment-name]')?.value || 'Guest';
         const text = document.querySelector('[data-comment-text]')?.value || '';
         if (text.trim()) {
-          patch({ diaryComments:[{name,text,at:new Date().toLocaleString()}, ...((state.diaryComments)||[])].slice(0,50) });
+          patch({ diaryComments:[{name,text,at:new Date().toLocaleString()}, ...((state.diaryComments)||[])].slice(0,50) }); try{ root.recordLiveRoomEvent?.({ type:'comment', name, text }); }catch{}
           functionalRenderPanel('diary');
         }
       }
@@ -292,14 +241,14 @@
         const name = document.querySelector('[data-pay-name]')?.value || 'Guest';
         const amount = document.querySelector('[data-pay-amount]')?.value || '0';
         const reason = document.querySelector('[data-pay-reason]')?.value || 'support';
-        patch({ diaryPayments:[{name,amount,reason,at:new Date().toISOString()}, ...((state.diaryPayments)||[])].slice(0,50) });
+        patch({ diaryPayments:[{name,amount,reason,at:new Date().toISOString()}, ...((state.diaryPayments)||[])].slice(0,50) }); try{ root.recordLivePayment?.({ name, amount, reason }); }catch{}
         try { root.bumpCommerceRank?.('makingMoney', Number(amount) || 1); } catch {}
         functionalRenderPanel('diary');
       }
 
       if (event.target.closest('[data-social-save]')) {
         patch({ socialPost:document.querySelector('[data-social-post]')?.value || '' });
-        alert('Social post draft saved locally. Connect platform APIs for direct posting.');
+        try{ root.recordLiveRoomEvent?.({ type:'social-draft', text:document.querySelector('[data-social-post]')?.value || '' }); }catch{} alert('Social post draft saved locally. Connect platform APIs for direct posting.');
       }
 
       if (event.target.closest('[data-studio-save]')) {
@@ -308,6 +257,27 @@
         const complete = ['adlib','beatVocal','fx','wav','correctFile'].filter(k=>checks[k]).length;
         patch({ studioNotes:document.querySelector('[data-studio-notes]')?.value || '', studioSummary:`Studio export summary: ${complete}/5 checks complete. ${complete === 5 ? 'Ready for .wav final export.' : 'Ask Jake to finish missing checks.'}` });
         functionalRenderPanel('studio');
+      }
+
+      if (event.target.closest('[data-login-save]') || event.target.closest('[data-login-provider]')) {
+        const username = document.querySelector('[data-login-username]')?.value || 'DYGENRJE';
+        const email = document.querySelector('[data-login-email]')?.value || 'zzzanthony123@gmail.com';
+        const password = document.querySelector('[data-login-password]')?.value || '';
+        const tier = document.querySelector('[data-login-tier]')?.value || 'Premium / Pro';
+        localStorage.setItem('srLoginPanelV27', JSON.stringify({ username, email, password, tier, confirmed:true, at:new Date().toISOString() }));
+        functionalRenderPanel('settings');
+      }
+
+      if (event.target.closest('[data-faq-dev-post]')) {
+        const text = document.querySelector('[data-faq-dev-text]')?.value || '';
+        const rating = document.querySelector('[data-faq-rating]')?.value || '';
+        if (text.trim()) {
+          try{ root.recordDeveloperFeed?.({ text, source:'FAQ Lounge' }); root.recordMention?.({ text, source:'manual/support-web' }); }catch{}
+        }
+        if (rating) {
+          try{ root.recordFaqRating?.({ rating, surface:'FAQ Lounge' }); }catch{}
+        }
+        functionalRenderPanel('faq');
       }
 
       if (event.target.closest('[data-reel-play]')) {
