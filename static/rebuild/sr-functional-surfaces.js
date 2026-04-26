@@ -36,77 +36,179 @@
   }
 
   function renderProfile(){
-    return panelShell('profile','CAMERA HAIR ANALYSIS','Profile — Open Camera Hair Analysis','Look left and look right — your camera runs live AI hair analysis, gives spoken results, and saves confirmed hair status to your account history.',`
-      <div id="srHairAnalysisRoom" style="min-height:200px;"><p style="color:#888;padding:1rem;">Loading hair analysis room…</p></div>
-    `, root.assets?.proGirl);
-  }
-
-  function renderDiary(){
-    return panelShell('diary','LIVE WEBCAM ROOM','Diary — Live Room','Real webcam, live comments, hearts, Stripe guest tips linked to your account, hands-free ARIA, and Aria/Jake history in Diary history.',`
-      <div id="srDiaryLiveRoom" style="min-height:200px;"><p style="color:#888;padding:1rem;">Loading live room…</p></div>
-    `, root.assets?.healthyHair);
-  }
-
-  function renderStudio(){
-    return panelShell('studio','STUDIO MOTHERBOARD','Studio — Import/Export/Play','Real MP3/M4A import, waveform motherboard with clickable tracks, highlight/cut/delete, export, and last 3 exports saved to your account.',`
-      <div id="srMotherboardContainer" style="min-height:200px;"><p style="color:#888;padding:1rem;">Loading studio…</p></div>
-    `, root.assets?.studioJake);
-  }
-
-  function renderFaq(){
-    const faqs = [
-      ['What is SupportRD?', 'A hair solution remote for products, AI guidance, Diary, Studio, Profile, FAQ, Catalog, and Market Laser.'],
-      ['What does ARIA do?', 'ARIA handles hair guidance, prep summaries, map behavior, and hands-free conversation.'],
-      ['What does Jake do?', 'Jake handles Studio execution, FX memory, adlib checks, alignment, and export discipline.'],
-      ['Can guests pay live?', 'Yes — Diary has a real Stripe guest tip link that records payments to your account.'],
-      ['How does Market Laser work?', 'Links to market-do8p.onrender.com. Paid $25,000 Live Signals account gets live signal access.'],
-      ['How does hair analysis work?', 'Profile opens your camera. Look left and right — Claude AI analyzes your hair, speaks results, and saves to account history.'],
-      ['What maps are available?', 'Wellness, Studio, Market, Diary, and Premium maps — each gives an account perk.'],
-      ['Is everything account-connected?', 'Yes. Diary, Profile, FAQ, Studio, Map, and Market all connect back to your account backbone.']
-    ];
-    return panelShell('faq','FAQ + TIKTOK REEL + DEVS FEED','FAQ Lounge','Real FAQs, 10-second TikTok hair reel, and Developer Feed — post comments and ratings, all saved to your account.',`
+    return panelShell('profile','OPEN CAMERA HAIR ANALYSIS','Profile Prep Room','Open camera, look left, look right, confirm hair, receive spoken hair analysis for texture and damage indicators, then save confirmed hair status to account history.',`
       <section class="sr-room-grid">
-        <article class="sr-room-card sr-reel-card">
-          <h3>10-Second TikTok Hair Reel</h3>
-          <div id="srTikTokReelContainer" style="min-height:180px;display:flex;align-items:center;justify-content:center;">
-            <p style="color:#888;font-size:.85rem;">Loading reel…</p>
+        <article class="sr-room-card sr-profile-camera" style="grid-column:1/-1">
+          <h3>Hair Analysis Camera</h3>
+          <div id="srHairAnalysisRoom" class="sr-real-room-mount">
+            <video id="srHairVideo" playsinline muted></video>
+            <canvas id="srHairCanvas" hidden></canvas>
+            <div class="sr-room-actions">
+              <button class="sr-buy-btn" type="button" data-hair-open-camera>Open Camera</button>
+              <button class="sr-mini-btn" type="button" data-hair-run-analysis>Look Left / Right + Analyze</button>
+              <button class="sr-mini-btn" type="button" data-hair-close-camera>Close Camera</button>
+            </div>
           </div>
         </article>
         <article class="sr-room-card">
-          <h3>Actual FAQs</h3>
-          <div class="sr-faq-list">${faqs.map(([q,a])=>`<details><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join('')}</div>
+          <h3>AI Prep Summary</h3>
+          <textarea data-profile-notes placeholder="Hair problem: tangly, oily, damaged, burned, not bouncy, dry, lack of color..."></textarea>
+          <button class="sr-buy-btn" type="button" data-profile-prep>Save Prep Summary</button>
+          <div class="sr-output-box">Hair analysis response saves to Profile and Aria/Jake history.</div>
         </article>
         <article class="sr-room-card">
-          <h3>Developer Feed + Mentions</h3>
-          <textarea id="srFaqDevText" placeholder="Post live developer comment or SupportRD mention found online…" rows="3" style="width:100%;resize:vertical;margin-bottom:.4rem;"></textarea>
-          <input id="srFaqRating" type="number" min="1" max="5" placeholder="Rating 1-5" style="width:100%;margin-bottom:.4rem;">
-          <button id="srFaqDevPostBtn" class="sr-buy-btn" type="button">Post to Developer Feed</button>
-          <div id="srFaqFeedList" style="margin-top:.75rem;max-height:200px;overflow-y:auto;"></div>
+          <h3>Optional Hair Profile Picture</h3>
+          <input class="sr-file-input" type="file" accept="image/*" data-profile-image>
+          <div class="sr-preview-box" id="profileScanPreview">Optional profile hair image.</div>
+        </article>
+      </section>
+    `, root.assets?.proGirl);
+  }
+
+
+  function renderDiary(){
+    return panelShell('diary','LIVE WEBCAM ROOM','Diary Live Room','Actual live webcam room with live video, comments, likes/hearts, Shopify guest support checkout, Aria/Jake history, and hands-free mode.',`
+      <section class="sr-room-grid">
+        <article class="sr-room-card sr-live-room">
+          <h3>Live Webcam Room</h3>
+          <div id="srDiaryLiveRoom" class="sr-real-room-mount">
+            <video id="srDiaryLiveVideo" playsinline muted></video>
+            <div class="sr-room-actions">
+              <button class="sr-buy-btn" type="button" data-diary-open-webcam>Open Webcam</button>
+              <button class="sr-mini-btn" type="button" data-diary-close-webcam>Close Webcam</button>
+              <button class="sr-mini-btn" type="button" data-diary-record-start>Record</button>
+              <button class="sr-mini-btn" type="button" data-diary-record-stop>Stop / Save</button>
+            </div>
+          </div>
+        </article>
+        <article class="sr-room-card">
+          <h3>Guest Live Actions</h3>
+          <button class="sr-mini-btn" type="button" data-live-like>Like</button>
+          <button class="sr-mini-btn" type="button" data-live-heart>Heart</button>
+          <input data-comment-name placeholder="Guest name">
+          <textarea data-comment-text placeholder="Write live comment..."></textarea>
+          <button class="sr-buy-btn" data-comment-add type="button">Post Comment</button>
+          <input data-pay-amount type="number" min="1" step="1" placeholder="Support amount">
+          <button class="sr-buy-btn" data-diary-shopify-tip type="button">Pay Live Streamer with Shopify</button>
+        </article>
+        <article class="sr-room-card">
+          <h3>Hands-Free + History</h3>
+          <button class="sr-buy-btn" data-voice-start="aria" data-hands-free="true" type="button">Hands-Free ARIA</button>
+          <button class="sr-mini-btn" data-voice-start="jake" data-hands-free="true" type="button">Hands-Free Jake</button>
+          <div class="sr-output-box" id="diaryAssistantHistory">Assistant history is saved to Account Backbone.</div>
+        </article>
+      </section>
+    `, root.assets?.healthyHair);
+  }
+
+
+  function renderStudio(){
+    return panelShell('studio','CREATE SONG + MOTHERBOARD','Studio Motherboard','Actual Studio room with MP3/M4A upload, clickable motherboard, playback, waveform highlight, cut/delete, FX board, export, imports/exports history, and Jake history.',`
+      <section class="sr-room-grid">
+        <article class="sr-room-card sr-studio-full" style="grid-column:1/-1">
+          <h3>Motherboard Studio</h3>
+          <div id="srMotherboardContainer" class="sr-real-room-mount">
+            <input type="file" accept="audio/*,.mp3,.m4a,.wav" data-studio-audio>
+            <canvas id="srStudioWaveform" height="120"></canvas>
+            <div class="sr-room-actions">
+              <button class="sr-buy-btn" type="button" data-studio-play>Playback</button>
+              <button class="sr-mini-btn" type="button" data-studio-highlight>Highlight</button>
+              <button class="sr-mini-btn" type="button" data-studio-cut>Cut</button>
+              <button class="sr-mini-btn" type="button" data-studio-delete>Delete</button>
+              <button class="sr-mini-btn" type="button" data-studio-export-wav>Export WAV</button>
+            </div>
+          </div>
+        </article>
+        <article class="sr-room-card">
+          <h3>Instrument / FX Board</h3>
+          <button class="sr-mini-btn" type="button" data-fx="reverb">Reverb</button>
+          <button class="sr-mini-btn" type="button" data-fx="delay">Delay</button>
+          <button class="sr-mini-btn" type="button" data-fx="clean">Clean Vocal</button>
+          <button class="sr-buy-btn" type="button" data-voice-start="jake">Ask Jake</button>
+        </article>
+        <article class="sr-room-card">
+          <h3>Account Studio History</h3>
+          <div class="sr-output-box">Imports, last 3 exports, and Jake Studio history save to the account backbone.</div>
+        </article>
+      </section>
+    `, root.assets?.studioJake);
+  }
+
+
+  function renderFaq(){
+    return panelShell('faq','10 SECOND REEL + FAQ','FAQ Lounge','Actual FAQ Lounge with TikTok-style 10-second hair reel mount, real frequently asked questions, developer feed comments, ratings, and mentions saved to account.',`
+      <section class="sr-room-grid">
+        <article class="sr-room-card sr-reel-card">
+          <h3>10 Second TikTok Hair Reel</h3>
+          <div id="srTikTokReelContainer" class="sr-real-room-mount"></div>
+          <button class="sr-buy-btn" data-reel-play type="button">Play 10s Reel</button>
+        </article>
+        <article class="sr-room-card">
+          <h3>Frequently Asked Questions</h3>
+          <div class="sr-faq-list">
+            <details open><summary>What does SupportRD do?</summary><p>SupportRD connects hair products, AI guidance, live Diary, Studio, Profile, FAQ, Catalog, Map perks, and Market Laser.</p></details>
+            <details><summary>How does ARIA help?</summary><p>ARIA answers hair questions, runs voice guidance, routes analysis to Profile/Diary, and helps with product direction.</p></details>
+            <details><summary>How does Jake help?</summary><p>Jake handles Studio creation, vocals, FX, playback, export discipline, and motherboard checks.</p></details>
+            <details><summary>How can guests pay live?</summary><p>Diary uses Shopify support/tip checkout through the configured live support product variant.</p></details>
+            <details><summary>What is Market Laser?</summary><p>Market Laser connects the Render market website, market signals, and account login status.</p></details>
+          </div>
+        </article>
+        <article class="sr-room-card">
+          <h3>Developer Feed</h3>
+          <textarea data-faq-dev-text placeholder="Post live developer comment, mention, rating, or website mention..."></textarea>
+          <input data-faq-rating type="number" min="1" max="5" placeholder="Rating 1-5">
+          <button class="sr-buy-btn" data-faq-dev-post type="button">Post to Developer Feed</button>
+          <button class="sr-mini-btn" data-route="market" type="button">Scan Market Laser</button>
         </article>
       </section>
     `, root.assets?.dayparty);
   }
 
-  function renderMarket(){
-    return panelShell('market','MARKET LASER — LIVE SIGNALS','Market Laser — Connect Your Account','Link your market-do8p.onrender.com account. Paid $25,000 Live Signals tier unlocks live signals. Account link and map perks are saved to your backbone.',`
+
+  function renderMap(){
+    return panelShell('map','MAP CHANGE + PERKS','Map Change','Choose a map to change the whole app background/layout and reveal perks in a collapsible window.',`
+      <section class="sr-room-grid">
+        <article class="sr-room-card" style="grid-column:1/-1">
+          <h3>Change Map</h3>
+          <div class="sr-map-choice-grid">
+            ${['Swimming Hole','Snow Mountain Pass','Autumn Trail','Desert Cliff','Blissful Geysers','Chocolate Factory'].map(name=>`<button class="sr-mini-btn" type="button" data-map-choice="${name}">${name}</button>`).join('')}
+          </div>
+          <details open class="sr-map-perks-details">
+            <summary>Available Perks</summary>
+            <div id="srMapPerksContainer" class="sr-real-room-mount"></div>
+          </details>
+        </article>
+      </section>
+    `, root.assets?.hijaFelix);
+  }
+
+function renderMarket(){
+    return panelShell('market','LIVE MARKET LINK + LASER CHARTS','Market Laser','Market Laser shows the live Render market link, account link status, and laser chart mount for market signals.',`
       <section class="sr-room-grid">
         <article class="sr-room-card">
-          <h3>Connect Market Login</h3>
-          <input data-market-email placeholder="Market login email" style="width:100%;margin-bottom:.4rem;">
+          <h3>Live Market Website</h3>
+          <a class="sr-buy-btn" href="https://market-do8p.onrender.com/" target="_blank" rel="noopener">Open market-do8p.onrender.com</a>
+          <input data-market-email placeholder="Market login email">
           <label class="sr-check-row"><input data-market-paid type="checkbox"> $25,000 Live Signals paid account</label>
-          <button class="sr-buy-btn" style="margin-top:.5rem;" type="button" data-market-login-save>Connect Market Login</button>
-          <button class="sr-mini-btn" style="margin-top:.4rem;" type="button" onclick="window.SupportRDRebuild&&window.SupportRDRebuild.marketLaser&&window.SupportRDRebuild.marketLaser.openMarket()">Open market-do8p.onrender.com</button>
+          <button class="sr-mini-btn" data-market-login-save type="button">Connect Market Account</button>
         </article>
-        <article class="sr-room-card">
-          <h3>Account Link Status</h3>
-          <div id="srMarketStatus"><p style="color:#888;font-size:.85rem;">Loading status…</p></div>
-        </article>
-        <article class="sr-room-card">
-          <h3>Map Perks (Account Linked)</h3>
-          <div id="srMapPerksContainer"><p style="color:#888;font-size:.85rem;">Loading perks…</p></div>
+        <article class="sr-room-card" style="grid-column:1/-1">
+          <h3>Laser Charts</h3>
+          <div id="srMarketStatus" class="sr-real-room-mount"></div>
+          <div class="sr-laser-chart-grid">
+            <div class="sr-laser-bar" style="--h:75%"><span>SEO</span></div>
+            <div class="sr-laser-bar" style="--h:55%"><span>Shopify</span></div>
+            <div class="sr-laser-bar" style="--h:82%"><span>Map</span></div>
+            <div class="sr-laser-bar" style="--h:64%"><span>Catalog</span></div>
+          </div>
         </article>
       </section>
     `, root.assets?.artists);
+  }
+
+
+  function getLoginState(){
+    try { return JSON.parse(localStorage.getItem('srLoginPanelV27') || '{}'); } catch { return {}; }
   }
 
   function renderSettings(){
@@ -174,10 +276,10 @@
     const stage = document.querySelector('#remoteStage');
     if (!stage) return;
     document.querySelectorAll('[data-route]').forEach(btn=>btn.classList.toggle('active', btn.dataset.route === route));
-    const map = { profile:renderProfile, diary:renderDiary, studio:renderStudio, faq:renderFaq, market:renderMarket, settings:renderSettings, aria:renderAria, jake:renderJake };
+    const map = { profile:renderProfile, diary:renderDiary, studio:renderStudio, faq:renderFaq, market:renderMarket, map:renderMap, settings:renderSettings, aria:renderAria, jake:renderJake };
     if (map[route]) stage.innerHTML = map[route]();
     else if (route === 'catalog' && root.renderPanel) return root.renderPanel('catalog');
-    else if (route === 'map' && root.renderPanel) { try{ root.recordMapChoice?.('Map Change opened', 'recent map/perks reviewed'); }catch{} return root.renderPanel('map'); }
+    else if (route === 'map') return renderMap();
     else stage.innerHTML = renderDiary();
     try { root.bumpCommerceRank?.(route === 'catalog' ? 'makingMoney' : 'professional', 1); } catch {}
   }
