@@ -21,19 +21,19 @@
   };
 
   const PRODUCTS = [
-    {id:'shampoo', title:'Shampoo', price:'Catalog', img:ASSETS.shampoo, desc:'Daily cleansing lane with SupportRD product energy.', tag:'Hair product'},
-    {id:'formula', title:'Formula Exclusiva Anti-Fall', price:'Catalog', img:ASSETS.formulaExclusive, desc:'Premium formula lane for serious hair support.', tag:'Anti-fall'},
-    {id:'gotero', title:'Fast Dropper / Gotero', price:'Catalog', img:ASSETS.fastDropper, desc:'Scalp movement and dropper-focused product lane.', tag:'Scalp'},
-    {id:'bright', title:'Bright Droplets', price:'Catalog', img:ASSETS.brightDroplets, desc:'Shine and evenness lane for styling finish.', tag:'Shine'},
-    {id:'lacceador', title:'Lacceador Crece', price:'Catalog', img:ASSETS.lacceador, desc:'Restructuring and softness product lane.', tag:'Styling'},
-    {id:'mask', title:'Mascarilla / Mask', price:'Catalog', img:ASSETS.mask, desc:'Deep natural blender and avocado mask lane.', tag:'Condition'}
+    {id:'bright', title:'Bright Droplets', price:'Shop', href:'https://shop.supportrd.com/products/bright-droplets', img:ASSETS.brightDroplets, desc:'Shine, softness and finish support.', tag:'Shine'},
+    {id:'formula', title:'Exclusive Formula Anti-Fall', price:'Shop', href:'https://shop.supportrd.com/products/exclusive-formula-anti-fall', img:ASSETS.formulaExclusive, desc:'Anti-fall support lane for serious hair care.', tag:'Anti-fall'},
+    {id:'lacceador', title:'Lacceador Crece', price:'Shop', href:'https://shop.supportrd.com/products/lacceador-crece', img:ASSETS.lacceador, desc:'Restructuring, growth support and softness lane.', tag:'Styling'},
+    {id:'shampoo', title:'Shampoo', price:'Shop', href:'https://shop.supportrd.com/products/shampoo', img:ASSETS.shampoo, desc:'Cleanse, condition and daily hair support.', tag:'Wash'},
+    {id:'mask', title:'Mascarilla / Mask', price:'Shop', href:'https://shop.supportrd.com/products/mascarilla', img:ASSETS.mask, desc:'Deep conditioner mask lane.', tag:'Condition'},
+    {id:'full-line', title:'Support Full Product Line', price:'Shop', href:'https://shop.supportrd.com/products/support-full-product-line', img:ASSETS.productFamily, desc:'Full SupportRD product family.', tag:'Bundle'}
   ];
 
   const PACKAGES = [
-    {id:'studio-jake', title:'Studio Jake Premium', price:'$100/mo', img:ASSETS.studioJake, desc:'Jake studio lane for exports, FX, adlibs, beat-to-vocal alignment, and motherboard-ready .wav work.', buy:'Buy Studio'},
-    {id:'premium', title:'Premium Inner Circle', price:'$35/mo', img:ASSETS.premiumPro, desc:'Inner Circle access with premium ARIA support, profile credibility, and guided hair/account flow.', buy:'Buy Premium'},
-    {id:'pro', title:'Professional / Making Money Pro', price:'$50/mo', img:ASSETS.proGirl, desc:'Aria Voice professional tier for serious users building Professional and Making Money rank.', buy:'Buy Pro'},
-    {id:'catalog', title:'SupportRD Product Catalog', price:'Shop', img:ASSETS.productFamily, desc:'Natural hair product catalog with Shampoo, Gotero, Formula, Mask, Lacceador, and Bright Droplets.', buy:'Open Catalog'}
+    {id:'studio-jake', title:'Studio Jake Premium', price:'$100/mo', href:'https://shop.supportrd.com/products/jake-in-the-studio-studio-tier-professional-studio-account', img:ASSETS.studioJake, desc:'Jake studio lane for exports, FX, adlibs, beat-to-vocal alignment, and motherboard-ready .wav work.', buy:'Buy Studio'},
+    {id:'premium-inner', title:'Premium Inner Circle', price:'$35/mo', href:'https://shop.supportrd.com/products/aria-ai-voice-inner-circle-tier-premium-account', img:ASSETS.premiumPro, desc:'Inner Circle access with premium ARIA support, profile credibility, and guided hair/account flow.', buy:'Buy Premium'},
+    {id:'pro-making-money', title:'Professional / Making Money Pro', price:'$50/mo', href:'https://shop.supportrd.com/products/aria-professional-making-money-tier-professional-account', img:ASSETS.proGirl, desc:'Aria Voice professional tier for serious users building Professional and Making Money rank.', buy:'Buy Pro'},
+    {id:'catalog', title:'SupportRD Product Catalog', price:'Shop', href:'https://shop.supportrd.com/products/support-full-product-line', img:ASSETS.productFamily, desc:'Natural hair product catalog with Shampoo, Gotero, Formula, Mask, Lacceador, and Bright Droplets.', buy:'Open Catalog'}
   ];
 
   const PANELS = {
@@ -201,34 +201,41 @@
   function renderAds(){
     const top = document.querySelector('#topAdStrip');
     const side = document.querySelector('#rightAdStrip');
-    if (top) top.innerHTML = PACKAGES.map(p=>`
-      <article class="sr-ad-card">
-        <img src="${p.img}" alt="${p.title}" loading="lazy">
-        <div><span>${p.price}</span><strong>${p.title}</strong><p>${p.desc}</p></div>
-        <button class="sr-buy-btn" data-buy="${p.id}">${p.buy}</button>
-      </article>
-    `).join('');
+    if (top) {
+      const uniquePackages = PACKAGES.filter((p, index, arr)=>arr.findIndex(x=>x.id===p.id)===index);
+      top.innerHTML = uniquePackages.map(p=>`
+        <article class="sr-ad-card" data-ad-id="${p.id}">
+          <img src="${p.img}" alt="${p.title}" loading="lazy" onerror="this.style.display='none'">
+          <div><span>${p.price}</span><strong>${p.title}</strong><p>${p.desc}</p></div>
+          <a class="sr-buy-btn" href="${p.href || '#'}" target="_blank" rel="noopener" data-buy="${p.id}">${p.buy}</a>
+        </article>
+      `).join('');
+    }
     const sideItems = [
-      ...PACKAGES,
-      {id:'dayparty', title:'Dayparty Visibility', price:'Promo', img:ASSETS.dayparty, desc:'Run culture, reels, and live proof around the Remote.', buy:'Boost'},
-      {id:'artists', title:'Artist Market', price:'SEO', img:ASSETS.artists, desc:'Market reader follows the public pulse and music culture lane.', buy:'Scan'}
+      {id:'bright-droplets', title:'Bright Droplets', price:'Shop', img:ASSETS.brightDroplets, desc:'Shine and finish product lane.', href:'https://shop.supportrd.com/products/bright-droplets', buy:'Buy'},
+      {id:'formula-anti-fall', title:'Exclusive Formula Anti-Fall', price:'Shop', img:ASSETS.formulaExclusive, desc:'Anti-fall product lane.', href:'https://shop.supportrd.com/products/exclusive-formula-anti-fall', buy:'Buy'},
+      {id:'lacceador-crece', title:'Lacceador Crece', price:'Shop', img:ASSETS.lacceador, desc:'Styling and elasticity support.', href:'https://shop.supportrd.com/products/lacceador-crece', buy:'Buy'},
+      {id:'shampoo', title:'Shampoo', price:'Shop', img:ASSETS.shampoo, desc:'Daily wash lane.', href:'https://shop.supportrd.com/products/shampoo', buy:'Buy'},
+      {id:'mask', title:'Mascarilla', price:'Shop', img:ASSETS.mask, desc:'Conditioning mask lane.', href:'https://shop.supportrd.com/products/mascarilla', buy:'Buy'},
+      {id:'market-laser', title:'Market Laser', price:'Live', img:ASSETS.artists, desc:'Open SupportRD market reader.', href:'https://market-do8p.onrender.com/', buy:'Open'}
     ];
     if (side) side.innerHTML = sideItems.map(p=>`
-      <article class="sr-side-ad">
-        <img src="${p.img}" alt="${p.title}" loading="lazy">
-        <div><span>${p.price}</span><h3>${p.title}</h3><p>${p.desc}</p><button class="sr-buy-btn" data-buy="${p.id}">${p.buy}</button></div>
+      <article class="sr-side-ad" data-ad-id="${p.id}">
+        <img src="${p.img}" alt="${p.title}" loading="lazy" onerror="this.style.display='none'">
+        <div><span>${p.price}</span><h3>${p.title}</h3><p>${p.desc}</p><a class="sr-buy-btn" href="${p.href}" target="_blank" rel="noopener" data-buy="${p.id}">${p.buy}</a></div>
       </article>
     `).join('');
   }
+
 
   function productGrid(){
     return `<div class="sr-product-grid">${PRODUCTS.map(p=>`
       <article class="sr-product-card">
         <img src="${p.img}" alt="${p.title}" loading="lazy">
-        <span>${p.tag}</span>
+        <span>${p.tag} · ${p.price}</span>
         <h3>${p.title}</h3>
         <p>${p.desc}</p>
-        <button class="sr-buy-btn" data-product="${p.id}">Buy / View ${p.title}</button>
+        <a class="sr-buy-btn" href="${p.href}" target="_blank" rel="noopener" data-product="${p.id}">Buy / View ${p.title}</a>
       </article>
     `).join('')}</div>`;
   }
