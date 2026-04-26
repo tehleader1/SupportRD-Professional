@@ -185,6 +185,88 @@
     @media(max-width:1100px){.sr-account-backbone-grid{grid-template-columns:repeat(3,minmax(0,1fr));}}
     @media(max-width:680px){.sr-account-backbone-grid{grid-template-columns:1fr;}}
 
+  
+    [data-support-map="swimming-hole"] body,
+    body[data-support-map="swimming-hole"]{
+      background:radial-gradient(circle at 20% 10%,rgba(41,182,246,.34),transparent 32%),linear-gradient(145deg,#031827,#063347,#0b6a76)!important;
+    }
+    body[data-support-map="snow-mountain-pass"]{
+      background:radial-gradient(circle at 75% 0%,rgba(255,255,255,.42),transparent 30%),linear-gradient(145deg,#07111f,#26384f,#b7d7f4)!important;
+    }
+    body[data-support-map="autumn-trail"]{
+      background:radial-gradient(circle at 20% 20%,rgba(244,199,90,.32),transparent 28%),linear-gradient(145deg,#1b0d07,#6f3219,#b8792a)!important;
+    }
+    body[data-support-map="desert-cliff"]{
+      background:radial-gradient(circle at 80% 20%,rgba(255,221,154,.3),transparent 30%),linear-gradient(145deg,#1b1107,#704414,#c18b4b)!important;
+    }
+    body[data-support-map="blissful-geysers"]{
+      background:radial-gradient(circle at 45% 10%,rgba(160,255,232,.34),transparent 28%),linear-gradient(145deg,#06101f,#084441,#3bb79f)!important;
+    }
+    body[data-support-map="chocolate-factory"]{
+      background:radial-gradient(circle at 40% 10%,rgba(255,214,143,.24),transparent 30%),linear-gradient(145deg,#160b06,#4a2113,#8a4a22)!important;
+    }
+    .sr-map-choice-grid{
+      display:grid;
+      grid-template-columns:repeat(3,minmax(0,1fr));
+      gap:.6rem;
+    }
+    .sr-map-perks-details{
+      margin-top:1rem;
+      border:1px solid rgba(255,255,255,.16);
+      border-radius:1rem;
+      padding:1rem;
+      background:rgba(255,255,255,.06);
+    }
+    .sr-map-perk-card{
+      padding:.8rem;
+      margin:.5rem 0;
+      border-radius:.85rem;
+      background:rgba(255,255,255,.08);
+      border:1px solid rgba(255,255,255,.12);
+    }
+    .sr-real-room-mount video{
+      width:100%;
+      max-height:22rem;
+      background:#06101f;
+      border-radius:1rem;
+      border:1px solid rgba(255,255,255,.14);
+    }
+    .sr-real-room-mount canvas{
+      width:100%;
+      border-radius:1rem;
+      background:rgba(255,255,255,.06);
+      border:1px solid rgba(255,255,255,.14);
+    }
+    .sr-room-actions{
+      display:flex;
+      gap:.5rem;
+      flex-wrap:wrap;
+      margin-top:.75rem;
+    }
+    .sr-laser-chart-grid{
+      min-height:16rem;
+      display:flex;
+      align-items:end;
+      gap:1rem;
+      padding:1rem;
+      border-radius:1rem;
+      background:rgba(3,8,19,.35);
+    }
+    .sr-laser-bar{
+      flex:1;
+      min-height:var(--h);
+      border-radius:.8rem .8rem 0 0;
+      background:linear-gradient(180deg,#13b7c7,#a9cf43);
+      display:flex;
+      align-items:end;
+      justify-content:center;
+      padding:.5rem;
+      color:#06101f;
+      font-weight:1000;
+      box-shadow:0 0 25px rgba(19,183,199,.24);
+    }
+    @media(max-width:760px){.sr-map-choice-grid{grid-template-columns:1fr;}}
+
   </style>
 </head>
 <body>
@@ -192,11 +274,6 @@
     <section class="sr-top-ad-strip" id="topAdStrip" aria-label="SupportRD package ads"></section>
     <div class="sr-remote-wrap">
       <section class="sr-remote" aria-label="SupportRD Remote">
-        <div style="display:flex;justify-content:flex-end;gap:.5rem;padding:.4rem 1rem 0;align-items:center;">
-          <span data-auth-name style="color:#b19c7d;font-size:.78rem;"></span>
-          <button class="sr-mini-btn" data-auth0-login style="font-size:.74rem;padding:.2rem .65rem;">Sign In</button>
-          <button class="sr-mini-btn" data-auth0-logout style="font-size:.74rem;padding:.2rem .65rem;display:none;">Sign Out</button>
-        </div>
         <header class="sr-remote-head">
           <div class="sr-brand">
             <h1>SupportRD Remote</h1>
@@ -229,9 +306,9 @@
   <script src="/static/rebuild/sr-fullscreen-remote.js"></script>
   <script src="/static/rebuild/sr-commerce-rank.js"></script>
   <script src="/static/rebuild/sr-account-backbone.js"></script>
+  <script src="/static/rebuild/sr-real-integrations.js"></script>
   <script src="/static/rebuild/sr-functional-surfaces.js"></script>
   <script src="/static/rebuild/sr-voice-assistants.js"></script>
-  <script src="/static/rebuild/sr-real-integrations.js"></script>
   <script src="/static/app.v20260320h.js"></script>
 </body>
 </html>
