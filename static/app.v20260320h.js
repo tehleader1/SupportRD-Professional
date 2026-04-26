@@ -3,7 +3,7 @@
     const root = window.SupportRDRebuild = window.SupportRDRebuild || {};
 
     function esc(value){
-      return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
     }
 
     function productCard(product){
@@ -99,7 +99,9 @@
     root.initFunctionalSurfaces?.();
     root.initVoiceAssistants?.();
 
-    // After every subsystem initializes, make sure the actual functional Diary room is the first visible panel.
+    // Pass 33 loader
+    var s=document.createElement('script'); s.src='/static/rebuild/sr-pass33-studio-polish.js'; document.body.appendChild(s);
+
     setTimeout(() => {
       try { root.renderFunctionalPanel?.('diary'); } catch {}
     }, 0);
