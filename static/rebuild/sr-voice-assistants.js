@@ -190,16 +190,29 @@
         speak(reply, ()=>{
           playTone('outro');
           patch({ status:'complete' });
+          const latest = read();
+          if (latest.handsFree) setTimeout(()=>startRecognition(latest.activeAssistant || assistant), 500);
         });
       }
     };
 
-    recognition.onerror = (event)=>{
+    recognition.onerror = async (event)=>{
+      const err = event?.error || 'unknown';
+      if (err === 'no-speech' || err === 'audio-capture' || err === 'network') {
+        const state = read();
+        const id = state.activeAssistant || 'aria';
+        const reply = buildFallbackReply(id, state.transcript || 'hair damage support');
+        stopRecognition();
+        patch({ status:'ai reply', reply });
+        try{ window.SupportRDRebuild?.recordDiaryAssistantHistory?.(id, state.transcript || 'hair damage support', reply); }catch{}
+        speak(reply, ()=>{ playTone('outro'); patch({ status:'complete' }); });
+        return;
+      }
       stopRecognition();
       playTone('error');
-      const msg = event?.error === 'not-allowed'
+      const msg = err === 'not-allowed'
         ? 'Microphone permission was blocked. Allow mic access in the browser to use ARIA or Jake voice.'
-        : `Mic issue: ${event?.error || 'unknown'}.`;
+        : `Mic issue: ${err}.`;
       patch({ status:'mic error', reply:msg });
       speak(msg, ()=>patch({ status:'complete' }));
     };
@@ -220,12 +233,13 @@
     }
   }
 
-  function startAssistantSequence(id){
+  function startAssistantSequence(id, handsFree = false){
     const assistant = id === 'jake' ? 'jake' : 'aria';
     stopRecognition();
     playTone('intro');
     patch({
       activeAssistant:assistant,
+      handsFree: !!handsFree,
       status:'intro sound',
       transcript:'',
       reply:'',
@@ -292,7 +306,7 @@
       const start = event.target.closest('[data-voice-start]');
       if (start) {
         event.preventDefault();
-        startAssistantSequence(start.dataset.voiceStart);
+        startAssistantSequence(start.dataset.voiceStart, !!start.dataset.handsFree);
         return;
       }
 
@@ -305,7 +319,7 @@
 
       const route = event.target.closest('[data-route]');
       if (route && (route.dataset.route === 'aria' || route.dataset.route === 'jake')) {
-        setTimeout(()=>startAssistantSequence(route.dataset.route), 60);
+        setTimeout(()=>startAssistantSequence(route.dataset.route, !!route.dataset.handsFree), 60);
       }
     });
   }
