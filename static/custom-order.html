@@ -14,7 +14,7 @@
     .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem;padding:1rem;}
     .card{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.07);border-radius:1.25rem;padding:1rem;}
     .card img{width:100%;aspect-ratio:16/10;object-fit:cover;border-radius:1rem;}
-    button{border:0;border-radius:.9rem;background:#13b7c7;color:#06101f;font-weight:900;padding:.8rem 1rem;}
+    button,.buy{border:0;border-radius:.9rem;background:#13b7c7;color:#06101f;font-weight:900;padding:.8rem 1rem;text-decoration:none;display:inline-block;}
     @media(max-width:850px){.grid{grid-template-columns:1fr;}}
   </style>
 </head>
@@ -25,12 +25,12 @@
     <p>Shampoo, Formula Exclusiva, Fast Dropper, Bright Droplets, Lacceador, and Mask. Connect Shopify live checkout after endpoint verification.</p>
   </section>
   <section class="grid">
-    <article class="card"><img src="/static/images/pass24/shampoo.jpg"><h2>Shampoo</h2><p>Daily wash lane.</p><button>Buy Shampoo</button></article>
-    <article class="card"><img src="/static/images/pass24/formula_exclusive.jpg"><h2>Formula Exclusiva</h2><p>Anti-fall support lane.</p><button>Buy Formula</button></article>
-    <article class="card"><img src="/static/images/pass24/fast_dropper.jpg"><h2>Fast Dropper</h2><p>Scalp dropper lane.</p><button>Buy Gotero</button></article>
-    <article class="card"><img src="/static/images/pass24/bright_droplets.jpeg"><h2>Bright Droplets</h2><p>Shine and finishing lane.</p><button>Buy Droplets</button></article>
-    <article class="card"><img src="/static/images/pass24/lacceador.jpg"><h2>Lacceador</h2><p>Styling and elasticity lane.</p><button>Buy Lacceador</button></article>
-    <article class="card"><img src="/static/images/pass24/mask.jpg"><h2>Mask</h2><p>Deep conditioner lane.</p><button>Buy Mask</button></article>
+    <article class="card"><img src="/static/images/pass24/shampoo.jpg"><h2>Shampoo</h2><p>Daily wash lane.</p><a class="buy" href="https://shop.supportrd.com/products/shampoo" target="_blank" rel="noopener">Buy Shampoo</a></article>
+    <article class="card"><img src="/static/images/pass24/formula_exclusive.jpg"><h2>Formula Exclusiva</h2><p>Anti-fall support lane.</p><a class="buy" href="https://shop.supportrd.com/products/exclusive-formula-anti-fall" target="_blank" rel="noopener">Buy Formula</a></article>
+    <article class="card"><img src="/static/images/pass24/fast_dropper.jpg"><h2>Fast Dropper</h2><p>Scalp dropper lane.</p><a class="buy" href="https://shop.supportrd.com/products/fast-dropper" target="_blank" rel="noopener">Buy Gotero</a></article>
+    <article class="card"><img src="/static/images/pass24/bright_droplets.jpeg"><h2>Bright Droplets</h2><p>Shine and finishing lane.</p><a class="buy" href="https://shop.supportrd.com/products/bright-droplets" target="_blank" rel="noopener">Buy Droplets</a></article>
+    <article class="card"><img src="/static/images/pass24/lacceador.jpg"><h2>Lacceador</h2><p>Styling and elasticity lane.</p><a class="buy" href="https://shop.supportrd.com/products/lacceador-crece" target="_blank" rel="noopener">Buy Lacceador</a></article>
+    <article class="card"><img src="/static/images/pass24/mask.jpg"><h2>Mask</h2><p>Deep conditioner lane.</p><a class="buy" href="https://shop.supportrd.com/products/mascarilla" target="_blank" rel="noopener">Buy Mask</a></article>
   </section>
 </body>
 </html>
