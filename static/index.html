@@ -104,108 +104,20 @@
       #ariaRoam, #jakeRoam { display:none; }
     }
   
-    .sr-voice-assistant-panel{
-      position:fixed;
-      left:50%;
-      bottom:1rem;
-      transform:translateX(-50%);
-      z-index:120;
-      width:min(46rem, calc(100vw - 2rem));
-      min-height:13rem;
-      border:1px solid rgba(255,255,255,.16);
-      border-radius:1.35rem;
-      padding:1rem;
-      background:rgba(6,16,31,.82);
-      color:#fff;
-      box-shadow:0 20px 80px rgba(0,0,0,.42), 0 0 32px rgba(19,183,199,.22);
-      backdrop-filter:blur(20px);
-      display:grid;
-      gap:.75rem;
+    .sr-transcript-hidden{
+      display:none;
     }
-    .sr-voice-head{
-      display:grid;
-      gap:.15rem;
-    }
-    .sr-voice-head span{
-      color:#13b7c7;
-      text-transform:uppercase;
-      letter-spacing:.13em;
-      font-size:.72rem;
-      font-weight:900;
-    }
-    .sr-voice-head strong{
-      font-size:1.25rem;
-    }
-    .sr-voice-head p{
-      margin:0;
-      color:rgba(255,255,255,.75);
-    }
-    .sr-voice-sequence{
-      display:grid;
-      grid-template-columns:repeat(6,minmax(0,1fr));
-      gap:.35rem;
-    }
-    .sr-voice-sequence div{
-      min-height:3rem;
-      padding:.45rem;
-      border:1px solid rgba(255,255,255,.12);
-      border-radius:.7rem;
-      background:rgba(255,255,255,.06);
-      font-size:.72rem;
-      color:rgba(255,255,255,.72);
-    }
-    .sr-voice-sequence div.active{
-      background:linear-gradient(135deg,#13b7c7,#b8f7ff);
-      color:#06101f;
-      font-weight:1000;
-      box-shadow:0 0 22px rgba(19,183,199,.35);
-    }
-    .sr-voice-box{
-      padding:.65rem;
+    .sr-voice-current-reply{
+      padding:.75rem;
       border-radius:.85rem;
-      background:rgba(255,255,255,.07);
       border:1px solid rgba(255,255,255,.12);
+      background:rgba(255,255,255,.07);
     }
-    .sr-voice-box p{
-      margin:.2rem 0 0;
-      color:rgba(255,255,255,.78);
+    .sr-voice-current-reply p{
+      margin:.25rem 0 0;
+      color:rgba(255,255,255,.82);
     }
-    .sr-voice-actions{
-      display:flex;
-      flex-wrap:wrap;
-      gap:.5rem;
-    }
-    @media(max-width:780px){
-      .sr-voice-sequence{grid-template-columns:repeat(2,minmax(0,1fr));}
-      .sr-voice-assistant-panel{position:relative;left:auto;bottom:auto;transform:none;width:auto;margin:1rem;}
-    }
-
-  
-    .sr-functional-panel .sr-functional-copy{
-      align-content:start;
-      overflow:auto;
-      max-height:calc(100vh - 16rem);
-    }
-    .sr-room-grid{
-      display:grid;
-      grid-template-columns:repeat(2,minmax(0,1fr));
-      gap:.75rem;
-      margin-top:.5rem;
-    }
-    .sr-room-card{
-      min-height:10rem;
-      padding:1rem;
-      border-radius:1.1rem;
-      border:1px solid rgba(255,255,255,.16);
-      background:rgba(255,255,255,.075);
-      box-shadow:inset 0 0 0 1px rgba(255,255,255,.035);
-    }
-    .sr-room-card h3{
-      margin:.1rem 0 .55rem;
-      font-size:1.15rem;
-    }
-    .sr-room-card textarea,
-    .sr-room-card input{
+    .sr-room-card select{
       width:100%;
       min-height:2.65rem;
       margin:.35rem 0;
@@ -215,94 +127,63 @@
       background:rgba(3,8,19,.45);
       color:#fff;
     }
-    .sr-room-card textarea{
-      min-height:7rem;
-      resize:vertical;
+    .sr-ad-card img,
+    .sr-side-ad img,
+    .sr-product-card img{
+      background:rgba(255,255,255,.08);
     }
-    .sr-preview-box,
-    .sr-output-box,
-    .sr-comment-list,
-    .sr-payment-list{
-      min-height:7rem;
-      padding:.7rem;
-      border-radius:.8rem;
-      background:rgba(3,8,19,.34);
-      border:1px solid rgba(255,255,255,.11);
-      overflow:auto;
-      color:rgba(255,255,255,.82);
+
+  
+    .sr-account-backbone-panel{
+      margin:1rem;
+      padding:1rem;
+      border-radius:1.2rem;
+      border:1px solid rgba(255,255,255,.16);
+      background:rgba(3,8,19,.35);
+      box-shadow:inset 0 0 0 1px rgba(255,255,255,.035);
     }
-    .sr-preview-box img{
-      max-width:100%;
-      max-height:14rem;
-      object-fit:cover;
-      border-radius:.7rem;
+    .sr-account-backbone-head span{
       display:block;
+      color:#13b7c7;
+      text-transform:uppercase;
+      letter-spacing:.14em;
+      font-size:.72rem;
+      font-weight:900;
     }
-    .sr-live-badge{
-      display:inline-flex;
-      padding:.35rem .65rem;
-      border-radius:999px;
-      background:linear-gradient(135deg,#ff3b55,#f4c75a);
-      color:#06101f;
-      font-weight:1000;
-      letter-spacing:.1em;
-      animation:flashBuy 1s infinite;
-    }
-    .sr-check-row{
+    .sr-account-backbone-head strong{
       display:block;
-      margin:.55rem 0;
-      padding:.55rem;
-      border-radius:.7rem;
-      background:rgba(255,255,255,.055);
+      font-size:1.25rem;
     }
-    .sr-reel-stage{
-      min-height:18rem;
-      position:relative;
-      overflow:hidden;
-      border-radius:1rem;
-      border:1px solid rgba(255,255,255,.12);
-      background:#06101f;
+    .sr-account-backbone-head p{
+      margin:.2rem 0 .7rem;
+      color:rgba(255,255,255,.72);
     }
-    .sr-reel-stage img{
-      width:100%;
-      height:18rem;
-      object-fit:cover;
-      display:block;
-      opacity:.72;
-    }
-    .sr-reel-stage strong{
-      position:absolute;
-      left:1rem;
-      right:1rem;
-      bottom:1rem;
-      font-size:1.3rem;
-      text-shadow:0 3px 18px rgba(0,0,0,.72);
-    }
-    .sr-faq-list{
+    .sr-account-backbone-grid{
       display:grid;
-      gap:.55rem;
+      grid-template-columns:repeat(6,minmax(0,1fr));
+      gap:.5rem;
     }
-    .sr-faq-list details{
-      border:1px solid rgba(255,255,255,.12);
+    .sr-account-backbone-grid article{
+      min-height:5rem;
+      padding:.65rem;
       border-radius:.8rem;
-      padding:.7rem;
-      background:rgba(255,255,255,.055);
+      border:1px solid rgba(255,255,255,.12);
+      background:rgba(255,255,255,.06);
     }
-    .sr-market-frame-card iframe{
-      width:100%;
-      min-height:22rem;
-      border:0;
-      border-radius:.9rem;
-      background:#06101f;
+    .sr-account-backbone-grid span,
+    .sr-account-backbone-grid small{
+      display:block;
+      color:rgba(255,255,255,.68);
+      font-size:.7rem;
     }
-    .sr-small-note{
-      font-size:.85rem;
-      color:rgba(255,255,255,.62);
+    .sr-account-backbone-grid strong{
+      display:block;
+      font-size:1rem;
+      overflow:hidden;
+      text-overflow:ellipsis;
     }
-    @media(max-width:900px){
-      .sr-room-grid{grid-template-columns:1fr;}
-      .sr-functional-panel .sr-functional-copy{max-height:none;}
-    }
+    @media(max-width:1100px){.sr-account-backbone-grid{grid-template-columns:repeat(3,minmax(0,1fr));}}
+    @media(max-width:680px){.sr-account-backbone-grid{grid-template-columns:1fr;}}
 
   </style>
 </head>
@@ -311,6 +192,11 @@
     <section class="sr-top-ad-strip" id="topAdStrip" aria-label="SupportRD package ads"></section>
     <div class="sr-remote-wrap">
       <section class="sr-remote" aria-label="SupportRD Remote">
+        <div style="display:flex;justify-content:flex-end;gap:.5rem;padding:.4rem 1rem 0;align-items:center;">
+          <span data-auth-name style="color:#b19c7d;font-size:.78rem;"></span>
+          <button class="sr-mini-btn" data-auth0-login style="font-size:.74rem;padding:.2rem .65rem;">Sign In</button>
+          <button class="sr-mini-btn" data-auth0-logout style="font-size:.74rem;padding:.2rem .65rem;display:none;">Sign Out</button>
+        </div>
         <header class="sr-remote-head">
           <div class="sr-brand">
             <h1>SupportRD Remote</h1>
@@ -342,8 +228,10 @@
   <script src="/static/rebuild/sr-app-state.js"></script>
   <script src="/static/rebuild/sr-fullscreen-remote.js"></script>
   <script src="/static/rebuild/sr-commerce-rank.js"></script>
+  <script src="/static/rebuild/sr-account-backbone.js"></script>
   <script src="/static/rebuild/sr-functional-surfaces.js"></script>
   <script src="/static/rebuild/sr-voice-assistants.js"></script>
+  <script src="/static/rebuild/sr-real-integrations.js"></script>
   <script src="/static/app.v20260320h.js"></script>
 </body>
 </html>
