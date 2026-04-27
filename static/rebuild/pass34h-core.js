@@ -1,0 +1,1 @@
+window.SupportRD34H={version:'34H'};
