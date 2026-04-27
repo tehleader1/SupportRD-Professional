@@ -3,31 +3,98 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>SupportRD Remote</title>
+  <title>SupportRD Remote | Professional</title>
   <link rel="stylesheet" href="/static/style.css">
+  <style>
+    :root{--cyan:#61efff;--cyan2:#14b7c7;--ink:#06101f;--panel:rgba(9,20,36,.78);--line:rgba(255,255,255,.16);--text:#f7fbff;--muted:rgba(247,251,255,.72)}
+    *{box-sizing:border-box}
+    html,body{min-height:100%;margin:0}
+    body{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text);background:linear-gradient(145deg,rgba(3,8,19,.86),rgba(6,16,31,.88)),url('/static/images/pass24/healthy_hair.jpeg');background-size:cover;background-position:center;background-attachment:fixed}
+    .sr-page{min-height:100vh;padding:1rem;background:radial-gradient(circle at 10% 0%,rgba(97,239,255,.18),transparent 30%),radial-gradient(circle at 90% 10%,rgba(169,207,67,.14),transparent 28%)}
+    .sr-shell{display:grid;grid-template-columns:minmax(0,1fr) 19rem;gap:1rem;max-width:1480px;margin:0 auto}
+    .sr-main{min-width:0}
+    .sr-hero{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1rem 1.15rem;border:1px solid var(--line);border-radius:1.4rem;background:rgba(3,8,19,.72);backdrop-filter:blur(14px);box-shadow:0 20px 60px rgba(0,0,0,.28)}
+    .sr-brand h1{margin:0;font-size:clamp(1.6rem,3vw,3rem);line-height:.95;letter-spacing:-.05em;text-shadow:0 4px 22px rgba(0,0,0,.42)}
+    .sr-brand p{max-width:42rem;margin:.45rem 0 0;color:var(--muted);font-size:1rem}
+    .sr-assistants{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+    .sr-ai-pill,.sr-settings-pill{border:1px solid var(--line);border-radius:999px;padding:.7rem .95rem;background:rgba(255,255,255,.08);color:var(--text);font-weight:900;box-shadow:inset 0 0 0 1px rgba(255,255,255,.03);cursor:pointer}
+    .sr-ai-pill strong{display:inline-grid;place-items:center;width:1.8rem;height:1.8rem;margin-right:.4rem;border-radius:999px;background:linear-gradient(135deg,#52e1b7,#a9cf43);color:#06101f}
+    .sr-top-ad-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.85rem;margin:1rem 0}
+    .sr-ad-card{min-height:8.6rem;display:grid;grid-template-columns:6rem 1fr auto;gap:.8rem;align-items:center;padding:.85rem;border-radius:1.2rem;border:1px solid var(--line);background:linear-gradient(145deg,rgba(8,20,34,.88),rgba(10,32,45,.72));box-shadow:0 18px 45px rgba(0,0,0,.23)}
+    .sr-ad-card img,.sr-side-ad img{width:100%;height:6rem;object-fit:cover;border-radius:.8rem;background:rgba(255,255,255,.08)}
+    .sr-ad-card span,.sr-side-ad span{color:#f4d56c;font-size:.75rem;text-transform:uppercase;letter-spacing:.12em;font-weight:1000}
+    .sr-ad-card strong,.sr-side-ad h3{display:block;margin:.15rem 0;font-size:1rem;line-height:1.05}
+    .sr-ad-card p,.sr-side-ad p{margin:0;color:var(--muted);font-size:.84rem;line-height:1.32}
+    .sr-buy-btn,.sr-mini-btn{border:0;border-radius:.9rem;padding:.75rem 1rem;background:linear-gradient(135deg,var(--cyan2),#9ff9ff);color:#06101f!important;font-weight:1000;text-decoration:none;box-shadow:0 12px 28px rgba(20,183,199,.24);cursor:pointer;display:inline-block}.sr-mini-btn{background:rgba(255,255,255,.12);color:#fff!important;border:1px solid var(--line);box-shadow:none}
+    .sr-remote{border:1px solid var(--line);border-radius:1.6rem;overflow:hidden;background:rgba(3,8,19,.76);backdrop-filter:blur(16px);box-shadow:0 30px 90px rgba(0,0,0,.34)}
+    .sr-remote-head{display:flex;align-items:center;justify-content:space-between;padding:.9rem 1rem;border-bottom:1px solid var(--line);background:linear-gradient(90deg,rgba(255,255,255,.05),rgba(255,255,255,.01))}
+    .sr-remote-title{font-weight:1000;text-transform:uppercase;letter-spacing:.14em;color:var(--cyan);font-size:.78rem}.sr-status{color:var(--muted);font-size:.86rem}
+    .sr-nav-six{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:.55rem;padding:.85rem;border-bottom:1px solid var(--line);background:rgba(255,255,255,.035)}
+    .sr-nav-btn{min-height:3.2rem;border:1px solid rgba(97,239,255,.26);border-radius:1rem;background:linear-gradient(135deg,rgba(20,183,199,.74),rgba(8,61,77,.65));color:#fff;font-weight:1000;cursor:pointer;font-size:1rem}.sr-nav-btn.active{background:linear-gradient(135deg,#72f7ff,#a9cf43);color:#06101f;box-shadow:0 12px 38px rgba(97,239,255,.24)}
+    #remoteStage{padding:1rem;min-height:33rem}
+    .sr-side{position:sticky;top:1rem;align-self:start;border:1px solid var(--line);border-radius:1.4rem;background:rgba(3,8,19,.78);backdrop-filter:blur(14px);overflow:hidden;max-height:calc(100vh - 2rem);display:flex;flex-direction:column}
+    .sr-side-head{padding:1rem;border-bottom:1px solid var(--line)}.sr-side-head span{color:var(--cyan);text-transform:uppercase;letter-spacing:.14em;font-weight:1000;font-size:.75rem}.sr-side-head h2{margin:.25rem 0 0;font-size:1.25rem}
+    .sr-right-ad-strip{display:grid;gap:.75rem;padding:.85rem;overflow:auto}.sr-side-ad{padding:.8rem;border-radius:1rem;border:1px solid var(--line);background:rgba(255,255,255,.055)}.sr-side-ad img{height:9rem;margin-bottom:.55rem}.sr-side-ad .sr-buy-btn{margin-top:.65rem;width:100%;text-align:center}
+    .sr-account-mini{margin:.85rem;padding:.8rem;border-radius:1rem;border:1px solid var(--line);background:rgba(255,255,255,.06)}.sr-account-mini strong{display:block}.sr-account-mini small{color:var(--muted)}
+    @media(max-width:1150px){.sr-shell{grid-template-columns:1fr}.sr-side{position:relative;top:auto;max-height:none}.sr-top-ad-strip{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media(max-width:760px){.sr-page{padding:.5rem}.sr-hero{align-items:flex-start;flex-direction:column}.sr-top-ad-strip{grid-template-columns:1fr}.sr-ad-card{grid-template-columns:5rem 1fr}.sr-ad-card .sr-buy-btn{grid-column:1/-1}.sr-nav-six{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  </style>
 </head>
 <body>
   <main class="sr-page">
-    <section class="sr-top-ad-strip" id="topAdStrip"></section>
-    <div class="sr-remote-wrap">
-      <section class="sr-remote">
-        <header class="sr-remote-head">
-          <div class="sr-brand">
-            <h1>SupportRD Remote</h1>
-          </div>
-        </header>
-        <nav class="sr-nav-six">
-          <button class="sr-nav-btn active" data-route="diary">Diary</button>
-          <button class="sr-nav-btn" data-route="studio">Studio</button>
-          <button class="sr-nav-btn" data-route="profile">Profile</button>
-          <button class="sr-nav-btn" data-route="faq">FAQ</button>
-          <button class="sr-nav-btn" data-route="map">Map</button>
-          <button class="sr-nav-btn" data-route="market">Market</button>
-        </nav>
-        <section id="remoteStage"></section>
-      </section>
-    </div>
+    <section class="sr-hero">
+      <div class="sr-brand">
+        <h1>SupportRD Remote</h1>
+        <p>Professional hair, AI assistant, Studio creation, live Diary, Profile analysis, FAQ Lounge, Map perks, Market Laser, and Shopify-ready catalog in one remote.</p>
+      </div>
+      <div class="sr-assistants">
+        <button class="sr-ai-pill" data-route="aria"><strong>A</strong>ARIA</button>
+        <button class="sr-ai-pill" data-route="jake"><strong>J</strong>Jake</button>
+        <button class="sr-settings-pill" data-route="settings">Settings</button>
+        <button class="sr-settings-pill" data-route="catalog">Catalog</button>
+      </div>
+    </section>
+
+    <section class="sr-top-ad-strip" id="topAdStrip">
+      <article class="sr-ad-card"><img src="/static/images/pass24/artists.jpg" alt="Studio Jake"><div><span>$100/mo</span><strong>Studio Jake Premium</strong><p>Studio lane for recording, FX, adlibs, exports, and motherboard creation.</p></div><a class="sr-buy-btn" href="https://shop.supportrd.com/products/jake-in-the-studio-studio-tier-professional-studio-account" target="_blank" rel="noopener">Buy Studio</a></article>
+      <article class="sr-ad-card"><img src="/static/images/pass24/support_model.jpg" alt="Premium"><div><span>$35/mo</span><strong>Premium Inner Circle</strong><p>Premium ARIA support, credibility, guided hair/account flow.</p></div><a class="sr-buy-btn" href="https://shop.supportrd.com/products/aria-ai-voice-inner-circle-tier-premium-account" target="_blank" rel="noopener">Buy Premium</a></article>
+      <article class="sr-ad-card"><img src="/static/images/pass24/hija_felix.jpeg" alt="Pro"><div><span>$50/mo</span><strong>Professional / Making Money</strong><p>Pro tier for seriousness, rank, account history, and money intent.</p></div><a class="sr-buy-btn" href="https://shop.supportrd.com/products/aria-professional-making-money-tier-professional-account" target="_blank" rel="noopener">Buy Pro</a></article>
+      <article class="sr-ad-card"><img src="/static/images/pass24/healthy_hair.jpeg" alt="Catalog"><div><span>Shop</span><strong>SupportRD Catalog</strong><p>Natural hair product catalog and Shopify checkout lane.</p></div><a class="sr-buy-btn" href="https://shop.supportrd.com/products/support-full-product-line" target="_blank" rel="noopener">Open Catalog</a></article>
+    </section>
+
+    <section class="sr-shell">
+      <div class="sr-main">
+        <section class="sr-remote">
+          <header class="sr-remote-head">
+            <div class="sr-remote-title">Remote Control</div>
+            <div class="sr-status">Mini pass foundation locked · function layer active</div>
+          </header>
+          <nav class="sr-nav-six">
+            <button class="sr-nav-btn active" data-route="diary">Diary</button>
+            <button class="sr-nav-btn" data-route="studio">Studio</button>
+            <button class="sr-nav-btn" data-route="profile">Profile</button>
+            <button class="sr-nav-btn" data-route="faq">FAQ</button>
+            <button class="sr-nav-btn" data-route="map">Map</button>
+            <button class="sr-nav-btn" data-route="market">Market</button>
+          </nav>
+          <section id="remoteStage"></section>
+        </section>
+      </div>
+
+      <aside class="sr-side">
+        <div class="sr-side-head"><span>Live shop strip</span><h2>SupportRD Offers</h2></div>
+        <section class="sr-right-ad-strip" id="rightAdStrip">
+          <article class="sr-side-ad"><img src="/static/images/pass24/bright_droplets.png" alt="Bright Droplets"><span>Product</span><h3>Bright Droplets</h3><p>Shine and finish support.</p><a class="sr-buy-btn" href="https://shop.supportrd.com/products/bright-droplets" target="_blank" rel="noopener">Buy</a></article>
+          <article class="sr-side-ad"><img src="/static/images/pass24/formula_exclusive.png" alt="Formula"><span>Product</span><h3>Formula Anti-Fall</h3><p>Anti-fall support lane.</p><a class="sr-buy-btn" href="https://shop.supportrd.com/products/exclusive-formula-anti-fall" target="_blank" rel="noopener">Buy</a></article>
+          <article class="sr-side-ad"><img src="/static/images/pass24/lacceador.png" alt="Lacceador"><span>Product</span><h3>Lacceador Crece</h3><p>Softness, elasticity, and styling support.</p><a class="sr-buy-btn" href="https://shop.supportrd.com/products/lacceador-crece" target="_blank" rel="noopener">Buy</a></article>
+          <article class="sr-side-ad"><img src="/static/images/pass24/shampoo.png" alt="Shampoo"><span>Product</span><h3>Shampoo</h3><p>Cleanse and daily support.</p><a class="sr-buy-btn" href="https://shop.supportrd.com/products/shampoo" target="_blank" rel="noopener">Buy</a></article>
+          <article class="sr-side-ad"><img src="/static/images/pass24/mask.png" alt="Mask"><span>Product</span><h3>Mascarilla</h3><p>Deep conditioner mask lane.</p><a class="sr-buy-btn" href="https://shop.supportrd.com/products/mascarilla" target="_blank" rel="noopener">Buy</a></article>
+        </section>
+        <div class="sr-account-mini"><strong>Account Backbone</strong><small>Diary, Profile, FAQ, Map, Studio and Market actions save to account history.</small></div>
+      </aside>
+    </section>
   </main>
+
   <script src="/static/pass34.js"></script>
 </body>
 </html>
