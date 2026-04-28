@@ -1,1 +1,1 @@
-(()=>{function load(src){var s=document.createElement('script');s.src=src+'?v=34h';s.defer=false;document.body.appendChild(s)}window.SupportRD34H=window.SupportRD34H||{};load('/static/rebuild/pass34h-core.js');load('/static/rebuild/pass34h-rooms.js');})();
+(()=>{function load(src){var s=document.createElement('script');s.src=src+'?v=38b';s.defer=false;document.body.appendChild(s)}window.SupportRD34H=window.SupportRD34H||{};load('/static/rebuild/pass34h-core.js');load('/static/rebuild/pass34h-rooms.js');load('/static/rebuild/pass38-studio.js');})();
