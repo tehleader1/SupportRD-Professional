@@ -207,6 +207,36 @@ function renderMarket(){
   }
 
 
+  function productCard(product){
+    return `
+      <article class="sr-product-card">
+        <img src="${esc(product.img || root.assets?.healthyHair || '')}" alt="${esc(product.title)}" loading="lazy" onerror="this.style.display='none'">
+        <span>${esc(product.tag || product.price || 'Shop')}</span>
+        <h3>${esc(product.title)}</h3>
+        <p>${esc(product.desc || '')}</p>
+        <a class="sr-buy-btn" href="${esc(product.href || 'https://shop.supportrd.com')}" target="_blank" rel="noopener" data-buy="${esc(product.id || '')}">${esc(product.buy || `Buy / View ${product.title}`)}</a>
+      </article>
+    `;
+  }
+
+  function renderCatalog(){
+    const packages = Array.isArray(root.packages) ? root.packages : [];
+    const products = Array.isArray(root.products) ? root.products : [];
+    return panelShell('catalog','CATALOG / PAYMENTS','Have Healthy Hair Catalog','Products, digital packages, Shopify purchase links, support payments, and Professional / Making Money intent stay in one clean lane.',`
+      <section class="sr-room-grid">
+        <article class="sr-room-card" style="grid-column:1/-1">
+          <h3>Digital Packages</h3>
+          <div class="sr-product-grid">${packages.map(productCard).join('') || '<p>Digital package links are loading.</p>'}</div>
+        </article>
+        <article class="sr-room-card" style="grid-column:1/-1">
+          <h3>Hair Products</h3>
+          <div class="sr-product-grid">${products.map(productCard).join('') || '<p>Product links are loading.</p>'}</div>
+        </article>
+      </section>
+    `, root.assets?.productFamily);
+  }
+
+
   function getLoginState(){
     try { return JSON.parse(localStorage.getItem('srLoginPanelV27') || '{}'); } catch { return {}; }
   }
@@ -276,9 +306,8 @@ function renderMarket(){
     const stage = document.querySelector('#remoteStage');
     if (!stage) return;
     document.querySelectorAll('[data-route]').forEach(btn=>btn.classList.toggle('active', btn.dataset.route === route));
-    const map = { profile:renderProfile, diary:renderDiary, studio:renderStudio, faq:renderFaq, market:renderMarket, map:renderMap, settings:renderSettings, aria:renderAria, jake:renderJake };
+    const map = { profile:renderProfile, diary:renderDiary, studio:renderStudio, faq:renderFaq, market:renderMarket, map:renderMap, catalog:renderCatalog, settings:renderSettings, aria:renderAria, jake:renderJake };
     if (map[route]) stage.innerHTML = map[route]();
-    else if (route === 'catalog' && root.renderPanel) return root.renderPanel('catalog');
     else if (route === 'map') return renderMap();
     else stage.innerHTML = renderDiary();
     try { root.bumpCommerceRank?.(route === 'catalog' ? 'makingMoney' : 'professional', 1); } catch {}

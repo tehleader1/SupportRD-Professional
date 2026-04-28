@@ -16,6 +16,7 @@
   let recognition = null;
   let silenceTimer = null;
   let active = false;
+  let finalizing = false;
 
   function read(){
     try { return { ...DEFAULT_STATE, ...JSON.parse(localStorage.getItem(VOICE_KEY) || '{}') }; }
@@ -31,6 +32,7 @@
     const next = { ...read(), ...(update || {}) };
     write(next);
     renderVoiceAssistantPanel();
+    try { window.dispatchEvent(new CustomEvent('sr-voice-state', { detail: next })); } catch {}
     return next;
   }
 
@@ -113,16 +115,17 @@
   }
 
   async function askBackend(id, transcript){
+    const assistantId = id === 'jake' ? 'projake' : 'aria';
     const body = {
+      assistant_id: assistantId,
       assistant: id,
+      message: transcript,
       transcript,
-      context: {
-        route: document.querySelector('.sr-nav-btn.active')?.dataset.route || '',
-        state: root.getAppState?.() || {}
-      }
+      route: document.querySelector('.sr-nav-btn.active')?.dataset.route || document.querySelector('[data-panel]')?.dataset.panel || 'home',
+      context: root.getAppState?.() || {}
     };
     try {
-      const res = await fetch('/api/assistant/voice', {
+      const res = await fetch('/api/voice/respond', {
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify(body)
@@ -137,22 +140,54 @@
 
   function stopRecognition(){
     active = false;
+    finalizing = false;
     if (silenceTimer) clearTimeout(silenceTimer);
     silenceTimer = null;
     try { recognition?.stop?.(); } catch {}
   }
 
+  async function finishAssistantTurn(id, transcript, reason = 'final'){
+    if (finalizing) return;
+    finalizing = true;
+    active = false;
+    if (silenceTimer) clearTimeout(silenceTimer);
+    silenceTimer = null;
+    try { recognition?.stop?.(); } catch {}
+    const clean = String(transcript || '').trim();
+    if (!clean) {
+      patch({ status:'silent complete', reply:`${assistantName(id)} did not hear anything after the pause. Click again when ready.` });
+      playTone('outro');
+      finalizing = false;
+      return;
+    }
+    patch({ status: reason === 'silence' ? 'transcribing after silence' : 'thinking', transcript:clean });
+    const reply = await askBackend(id, clean);
+    const current = read();
+    const history = [{ assistant:id, transcript:clean, reply, at:new Date().toISOString() }, ...(current.history || [])].slice(0, 50);
+    patch({ status:'ai reply', reply, history });
+    try{ window.SupportRDRebuild?.recordDiaryAssistantHistory?.(id, clean, reply); }catch{}
+    speak(reply, ()=>{
+      playTone('outro');
+      patch({ status:'complete' });
+      const latest = read();
+      finalizing = false;
+      if (latest.handsFree) setTimeout(()=>startRecognition(latest.activeAssistant || id), 500);
+    });
+  }
+
   function beginSilenceCountdown(id){
     if (silenceTimer) clearTimeout(silenceTimer);
-    patch({ status:'3 second open mic listening window' });
+    const current = read().transcript || '';
+    patch({ status: current ? 'listening for 2-3 second silence' : '3 second open mic listening window' });
     silenceTimer = setTimeout(()=>{
       if (!active) return;
-      patch({ status:'transcribing listening' });
-    }, 3200);
+      finishAssistantTurn(id, read().transcript || '', 'silence');
+    }, 2800);
   }
 
   function startRecognition(id){
     active = true;
+    finalizing = false;
     patch({ activeAssistant:id, status:'open mic', transcript:'', reply:'' });
 
     if (!RECOGNITION) {
@@ -180,19 +215,9 @@
       const currentText = (finalText || interim || '').trim();
       patch({ status: finalText ? 'transcribing' : 'listening', transcript: currentText });
       if (finalText) {
-        stopRecognition();
-        patch({ status:'thinking', transcript:finalText.trim() });
-        const reply = await askBackend(id, finalText.trim());
-        const state = read();
-        const history = [{ assistant:id, transcript:finalText.trim(), reply, at:new Date().toISOString() }, ...(state.history || [])].slice(0, 50);
-        patch({ status:'ai reply', reply, history });
-        try{ window.SupportRDRebuild?.recordDiaryAssistantHistory?.(id, finalText.trim(), reply); }catch{}
-        speak(reply, ()=>{
-          playTone('outro');
-          patch({ status:'complete' });
-          const latest = read();
-          if (latest.handsFree) setTimeout(()=>startRecognition(latest.activeAssistant || assistant), 500);
-        });
+        finishAssistantTurn(id, finalText.trim(), 'final');
+      } else if (currentText) {
+        beginSilenceCountdown(id);
       }
     };
 
@@ -261,6 +286,9 @@
     if (!target) return false;
     const state = read();
     const name = assistantName(state.activeAssistant || 'aria');
+    const activePanel = !['idle', 'complete', 'stopped', 'silent complete'].includes(String(state.status || 'idle'));
+    target.classList.toggle('is-active', activePanel);
+    target.classList.toggle('is-idle', !activePanel);
     target.innerHTML = `
       <div class="sr-voice-head">
         <span>Voice Assistant</span>

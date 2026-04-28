@@ -2,22 +2,22 @@
   const root = window.SupportRDRebuild = window.SupportRDRebuild || {};
 
   const ASSETS = {
-    packageCouple:'/static/images/pass24/package_couple.jpg',
-    studioJake:'/static/images/pass24/studio_jake_robe.jpg',
-    proGirl:'/static/images/pass24/support_model.jpg',
-    premiumPro:'/static/images/pass24/premium_pro_jewels.jpg',
-    productFamily:'/static/images/pass24/product_family.jpeg',
-    brightDroplets:'/static/images/pass24/bright_droplets.jpeg',
-    fastDropper:'/static/images/pass24/fast_dropper.jpg',
-    formulaExclusive:'/static/images/pass24/formula_exclusive.jpg',
-    lacceador:'/static/images/pass24/lacceador.jpg',
-    mask:'/static/images/pass24/mask.jpg',
-    shampoo:'/static/images/pass24/shampoo.jpg',
-    dayparty:'/static/images/pass24/dayparty.jpg',
-    artists:'/static/images/pass24/artists.jpg',
-    healthyHair:'/static/images/pass24/healthy_hair.jpeg',
-    hijaFelix:'/static/images/pass24/hija_felix.jpeg',
-    lezawli:'/static/images/pass24/lezawli.jpeg'
+    packageCouple:'/static/images/package_couple.jpg',
+    studioJake:'/static/images/studio_jake_robe.jpg',
+    proGirl:'/static/images/support_model.jpg',
+    premiumPro:'/static/images/premium_pro_jewels.jpg',
+    productFamily:'/static/images/product_family.jpeg',
+    brightDroplets:'/static/images/bright_droplets.jpeg',
+    fastDropper:'/static/images/fast_dropper.jpg',
+    formulaExclusive:'/static/images/formula_exclusive.jpg',
+    lacceador:'/static/images/lacceador.jpg',
+    mask:'/static/images/mask.jpg',
+    shampoo:'/static/images/shampoo.jpg',
+    dayparty:'/static/images/dayparty.jpg',
+    artists:'/static/images/artists.jpg',
+    healthyHair:'/static/images/healthy_hair.jpeg',
+    hijaFelix:'/static/images/hija_felix.jpeg',
+    lezawli:'/static/images/lezawli.jpeg'
   };
 
   const PRODUCTS = [
