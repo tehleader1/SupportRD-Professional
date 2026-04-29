@@ -4,6 +4,7 @@ __pycache__/
 .venv/
 venv/
 .codex_py_deps/
+.codex_server_deps/
 instance/
 users.db
 studio_data/

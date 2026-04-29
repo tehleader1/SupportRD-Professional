@@ -7410,6 +7410,11 @@ def home():
 def remote_shell(section=None):
     return send_from_directory("static", "local-remote.html")
 
+@app.route("/Globaltracker")
+@app.route("/globaltracker")
+def global_tracker_shell():
+    return send_from_directory("static", "index.html")
+
 @app.route("/<route_tag>")
 def tagged_remote_shell(route_tag):
     if str(route_tag or "").startswith("^^"):

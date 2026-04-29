@@ -1,10 +1,11 @@
 (()=>{
-  const BUILD = 'studio-motherboard-20260428a';
+  const BUILD = 'surface-upgrades-20260428a';
   const modules = [
     '/static/rebuild/sr-app-state.js',
     '/static/rebuild/sr-account-backbone.js',
     '/static/rebuild/sr-commerce-rank.js',
     '/static/rebuild/sr-real-integrations.js',
+    '/static/rebuild/sr-global-tracker.js',
     '/static/rebuild/sr-functional-surfaces.js',
     '/static/rebuild/sr-studio-motherboard.js',
     '/static/rebuild/sr-voice-assistants.js',
@@ -45,12 +46,14 @@
     const root = window.SupportRDRebuild || {};
     root.initAccountBackbone?.();
     root.initCommerceRank?.();
+    root.initGlobalTracker?.();
     root.initFunctionalSurfaces?.();
     root.initStudioMotherboard?.();
     root.initVoiceAssistants?.();
     root.initRemoteGlide?.();
     bindRemoteRoutes(root);
-    root.renderFunctionalPanel?.('diary');
+    const path = String(window.location.pathname || '').toLowerCase();
+    root.renderFunctionalPanel?.(path.includes('globaltracker') ? 'globaltracker' : 'diary');
   }
 
   window.SupportRD34H = window.SupportRD34H || {};

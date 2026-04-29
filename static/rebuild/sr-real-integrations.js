@@ -403,9 +403,14 @@
 
     async openCamera(videoEl) {
       try {
+        if (!videoEl) {
+          toast('Hair camera video mount is missing. Reopen Profile and try again.', 'error');
+          return false;
+        }
         this._stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
         videoEl.srcObject = this._stream;
         await videoEl.play();
+        await this._waitForFrame(videoEl);
         this._stage = 'look-left';
         toast('Camera open — look LEFT for first capture.', 'info');
         return true;
@@ -419,12 +424,37 @@
       canvasEl.width  = videoEl.videoWidth  || 640;
       canvasEl.height = videoEl.videoHeight || 480;
       const ctx = canvasEl.getContext('2d');
-      ctx.drawImage(videoEl, 0, 0);
+      ctx.drawImage(videoEl, 0, 0, canvasEl.width, canvasEl.height);
       return canvasEl.toDataURL('image/jpeg', 0.85).split(',')[1]; // base64
     },
 
+    _waitForFrame(videoEl) {
+      if (videoEl?.videoWidth && videoEl?.videoHeight) return Promise.resolve();
+      return new Promise(resolve => {
+        const done = () => {
+          videoEl?.removeEventListener?.('loadeddata', done);
+          videoEl?.removeEventListener?.('canplay', done);
+          resolve();
+        };
+        videoEl?.addEventListener?.('loadeddata', done, { once:true });
+        videoEl?.addEventListener?.('canplay', done, { once:true });
+        setTimeout(done, 1200);
+      });
+    },
+
     async runAnalysis(videoEl, canvasEl, onResult) {
-      if (!this._stream) { toast('Open camera first.', 'error'); return; }
+      if (!this._stream && videoEl?.srcObject) this._stream = videoEl.srcObject;
+      if (!videoEl || !canvasEl || !this._stream) {
+        const error = {
+          error: 'Open camera first so SupportRD can scan the current video frame.',
+          spoken: 'Open the camera first, then run the hair analysis again.'
+        };
+        toast(error.error, 'error');
+        if (onResult) onResult(error);
+        this._speak(error.spoken);
+        return error;
+      }
+      await this._waitForFrame(videoEl);
 
       // Capture look-left
       this._stage = 'look-left';
@@ -462,6 +492,13 @@
       } catch (e) {
         this._stage = 'idle';
         toast('Hair analysis error: ' + e.message, 'error');
+        const error = {
+          error: e.message || 'Hair analysis could not finish.',
+          spoken: 'The hair analysis could not finish. Please keep the camera open and try again.'
+        };
+        if (onResult) onResult(error);
+        this._speak(error.spoken);
+        return error;
       }
     },
 
@@ -543,10 +580,14 @@
 
     _speak(text) {
       if (!('speechSynthesis' in window) || !text) return;
-      window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      u.rate = 0.95; u.pitch = 1.05; u.volume = 1;
-      window.speechSynthesis.speak(u);
+      const speakNow = () => {
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.rate = 0.95; u.pitch = 1.05; u.volume = 1;
+        window.speechSynthesis.speak(u);
+      };
+      if (window.speechSynthesis.getVoices?.().length) speakNow();
+      else setTimeout(speakNow, 120);
     },
 
     closeCamera(videoEl) {
@@ -851,38 +892,76 @@
      7. FAQ — TIKTOK EMBED + DEVELOPER FEED + RATINGS
   ───────────────────────────────────────────── */
   const FAQ_LOUNGE = {
-    /* Embed a real TikTok video (10s reel).
-       Pass the TikTok video URL or ID.
-       TikTok oEmbed API: https://www.tiktok.com/oembed?url=...
-       For a real hair reel set cfg.TIKTOK_REEL_URL */
+    CLIPS: [
+      { title:'Meme zoom reaction', tag:'Meme', caption:'Quick punch-in, big caption, tiny chaos, then cut.', image:'/static/images/dayparty.jpg', accent:'#ff7ba8' },
+      { title:'Studio beat drop', tag:'Studio', caption:'Jake drops a beat card, waveform flashes, clip resets.', image:'/static/images/artists.jpg', accent:'#61efff' },
+      { title:'Tumblr mood board', tag:'Tumblr', caption:'Soft photos, quote overlay, product-glow ending.', image:'/static/images/support_model.jpg', accent:'#b78cff' },
+      { title:'Diary live pop', tag:'Diary', caption:'Hearts, comment flash, streamer card, next-room tease.', image:'/static/images/hija_felix.jpeg', accent:'#71f7c8' },
+      { title:'Catalog reveal', tag:'Shop', caption:'Fast product spin, discount badge, catalog button.', image:'/static/images/product_family.jpeg', accent:'#f6d15f' }
+    ],
+    _timer: 0,
+    _active: 0,
+
     renderTikTokReel(container) {
-      const url = cfg.TIKTOK_REEL_URL || '';
+      this.renderFreeClipStreamer(container);
+    },
+
+    renderFreeClipStreamer(container) {
       if (!container) return;
-      if (!url) {
-        container.innerHTML = `
-          <div style="background:#111;border-radius:12px;padding:2rem;text-align:center;color:#888;">
-            <p>🎵 Set <strong>TIKTOK_REEL_URL</strong> on Render to embed your 10-second hair reel.</p>
-            <p style="font-size:.8rem">Example: https://www.tiktok.com/@yourhandle/video/123456789</p>
-          </div>`;
-        return;
-      }
-      // TikTok blockquote embed
-      const videoId = url.split('/video/')[1]?.split('?')[0] || '';
+      const clip = this.CLIPS[this._active % this.CLIPS.length];
       container.innerHTML = `
-        <blockquote class="tiktok-embed" cite="${esc(url)}" data-video-id="${esc(videoId)}"
-          style="max-width:325px;min-width:325px;border-left:0;margin:0 auto;">
-          <section><a href="${esc(url)}" target="_blank" rel="noopener">View on TikTok</a></section>
-        </blockquote>`;
-      // Load TikTok embed script
-      if (!document.getElementById('tiktok-embed-script')) {
-        const s = document.createElement('script');
-        s.id  = 'tiktok-embed-script';
-        s.src = 'https://www.tiktok.com/embed.js';
-        s.async = true;
-        document.body.appendChild(s);
-      } else if (window.tiktok) {
-        window.tiktok?.render?.();
-      }
+        <div class="sr-free-clip-streamer" id="srFreeClipStreamer">
+          <div class="sr-free-clip-stage" id="srReelStage" style="--clip-accent:${esc(clip.accent)};background-image:linear-gradient(180deg,rgba(2,8,19,.12),rgba(2,8,19,.84)),url('${esc(clip.image)}')">
+            <span id="srReelTag">${esc(clip.tag)}</span>
+            <strong id="srReelTitle">${esc(clip.title)}</strong>
+            <p id="srReelText">${esc(clip.caption)}</p>
+            <div class="sr-free-clip-meter"><i id="srReelMeter" style="width:0%"></i></div>
+          </div>
+          <div class="sr-free-clip-list">
+            ${this.CLIPS.map((item, index)=>`
+              <button class="sr-mini-btn" type="button" data-free-clip="${index}">${esc(item.tag)}</button>
+            `).join('')}
+          </div>
+        </div>`;
+    },
+
+    showClip(index, container) {
+      const mount = container || document.getElementById('srTikTokReelContainer');
+      if (!mount || !mount.querySelector('#srReelStage')) this.renderFreeClipStreamer(mount);
+      const clip = this.CLIPS[index % this.CLIPS.length];
+      this._active = index % this.CLIPS.length;
+      const stage = document.getElementById('srReelStage');
+      const tag = document.getElementById('srReelTag');
+      const title = document.getElementById('srReelTitle');
+      const text = document.getElementById('srReelText');
+      const meter = document.getElementById('srReelMeter');
+      if (!stage || !tag || !title || !text || !meter) return;
+      stage.style.setProperty('--clip-accent', clip.accent);
+      stage.style.backgroundImage = `linear-gradient(180deg,rgba(2,8,19,.12),rgba(2,8,19,.84)),url('${clip.image}')`;
+      tag.textContent = clip.tag;
+      title.textContent = clip.title;
+      text.textContent = clip.caption;
+      meter.style.width = '0%';
+    },
+
+    playFreeClipStream(container) {
+      const mount = container || document.getElementById('srTikTokReelContainer');
+      if (!mount) return;
+      if (!mount.querySelector('#srReelStage')) this.renderFreeClipStreamer(mount);
+      clearInterval(this._timer);
+      let tick = 0;
+      this.showClip(this._active, mount);
+      this._timer = setInterval(() => {
+        tick += 1;
+        const meter = document.getElementById('srReelMeter');
+        if (meter) meter.style.width = `${Math.min(100, tick * 10)}%`;
+        if (tick > 0 && tick % 2 === 0) this.showClip(this._active + 1, mount);
+        if (tick >= 10) {
+          clearInterval(this._timer);
+          toast('10-second free clip stream complete.', 'success');
+        }
+      }, 1000);
+      toast('Playing free 10-second short clip stream.', 'success');
     },
 
     postToDeveloperFeed(text, rating, author) {
@@ -917,48 +996,160 @@
      Map choice + perk rewards connect to backbone
   ───────────────────────────────────────────── */
   const MAP_PERKS = {
+    STORE_KEY: 'srActiveMapThemeV2',
     MAPS: {
-      'Wellness Map':    { perk: 'Free hair mask sample', icon: '🌿' },
-      'Studio Map':     { perk: '10% off next studio export order', icon: '🎙' },
-      'Market Map':     { perk: 'Market signal preview (1 free)', icon: '📊' },
-      'Diary Map':      { perk: 'Live room guest pass', icon: '📹' },
-      'Premium Map':    { perk: 'Priority ARIA/Jake response', icon: '⭐' }
+      'Swimming Hole': {
+        slug:'swimming-hole', icon:'SW', image:'/static/images/tropical-hero.jpg',
+        accent:'#42d8ff', accent2:'#71f7c8', panel:'rgba(3,24,34,.86)', card:'rgba(9,54,67,.74)', line:'rgba(113,247,200,.42)',
+        perk:'Hydration Splash Perk', discountLabel:'10% off the hair product catalog', discountCode:'SWIM10',
+        details:['Best for wash-day product browsing and healthy hair refreshes.','Activates a cooler water-tone layout across the remote.','Use the discount button to open Shopify with the perk code applied.']
+      },
+      'Snow Mountain Pass': {
+        slug:'snow-mountain-pass', icon:'SN', image:'/static/images/remote-healthy-hair.jpeg',
+        accent:'#d8f6ff', accent2:'#8fd2ff', panel:'rgba(10,23,38,.9)', card:'rgba(223,244,255,.12)', line:'rgba(216,246,255,.42)',
+        perk:'Clean Slate Perk', discountLabel:'15% off shampoo and reset products', discountCode:'SNOW15',
+        details:['Best for starting over, clarifying, and cleaner routine planning.','Brightens panels so Profile and FAQ feel calmer.','Use the discount button before checkout so the code follows the cart.']
+      },
+      'Autumn Trail': {
+        slug:'autumn-trail', icon:'AU', image:'/static/images/dayparty.jpg',
+        accent:'#f4d56c', accent2:'#ff9f52', panel:'rgba(36,21,9,.88)', card:'rgba(92,47,18,.62)', line:'rgba(244,213,108,.42)',
+        perk:'Routine Builder Perk', discountLabel:'12% off bundles and product-family picks', discountCode:'AUTUMN12',
+        details:['Best for building a full routine instead of one loose product.','Warms panels for catalog, FAQ, and map reading.','The active code opens the bundle/cart path with the discount attached.']
+      },
+      'Desert Cliff': {
+        slug:'desert-cliff', icon:'DS', image:'/static/images/lezawli.jpeg',
+        accent:'#ffb15f', accent2:'#ff7ba8', panel:'rgba(38,20,14,.9)', card:'rgba(92,39,28,.62)', line:'rgba(255,177,95,.42)',
+        perk:'Heat Shield Perk', discountLabel:'Free shipping support code for dry-hair care', discountCode:'DESERTSHIP',
+        details:['Best for dry, heat-stressed, or travel-heavy hair routines.','Gives the app a warmer desert layout without moving content blocks.','Open the Shopify discount button and verify the code at checkout.']
+      },
+      'Blissful Geysers': {
+        slug:'blissful-geysers', icon:'GY', image:'/static/images/1000000587.jpg',
+        accent:'#9ff9ff', accent2:'#b78cff', panel:'rgba(16,18,42,.9)', card:'rgba(59,47,109,.58)', line:'rgba(183,140,255,.42)',
+        perk:'Steam Shine Perk', discountLabel:'20% off Bright Droplets shine support', discountCode:'GEYSER20',
+        details:['Best for shine, gloss, and finish products.','Adds a glowing water/steam theme across panels.','The discount link routes through Shopify discount handling.']
+      },
+      'Chocolate Factory': {
+        slug:'chocolate-factory', icon:'CH', image:'/static/images/product_family.jpeg',
+        accent:'#ffd278', accent2:'#c4865a', panel:'rgba(33,20,14,.9)', card:'rgba(75,46,31,.66)', line:'rgba(255,210,120,.38)',
+        perk:'Sweet Cart Perk', discountLabel:'5% off SupportRD catalog checkout', discountCode:'CHOCO5',
+        details:['Best for quick checkout and small cart saves.','Turns the app into a warmer product-focused layout.','Use the active perk button when you are ready to shop.']
+      }
+    },
+
+    getMapNames() {
+      return Object.keys(this.MAPS);
+    },
+
+    discountUrl(entry) {
+      return entry?.discountCode ? `https://shop.supportrd.com/discount/${encodeURIComponent(entry.discountCode)}?redirect=/collections/all` : 'https://shop.supportrd.com/collections/all';
+    },
+
+    currentMapName() {
+      const account = root.getAccountBackbone?.();
+      const fromAccount = account?.mapChange?.recentMap;
+      if (fromAccount && this.MAPS[fromAccount]) return fromAccount;
+      try {
+        const saved = JSON.parse(localStorage.getItem(this.STORE_KEY) || '{}');
+        if (saved.map && this.MAPS[saved.map]) return saved.map;
+      } catch {}
+      return '';
+    },
+
+    installThemeStyles() {
+      if (document.getElementById('srMapThemeCss')) return;
+      const style = document.createElement('style');
+      style.id = 'srMapThemeCss';
+      style.textContent = `
+        body.sr-map-themed{background:linear-gradient(145deg,rgba(2,8,19,.72),rgba(2,8,19,.88)),var(--sr-map-image)!important;background-size:cover!important;background-position:center!important;background-attachment:fixed!important}
+        body.sr-map-themed .sr-page{background:radial-gradient(circle at 8% 0%,var(--sr-map-glow),transparent 28%),radial-gradient(circle at 92% 6%,var(--sr-map-glow-2),transparent 24%),linear-gradient(145deg,rgba(2,8,19,.28),rgba(2,8,19,.56))!important}
+        body.sr-map-themed .sr-remote,body.sr-map-themed .sr-side,body.sr-map-themed .sr-hero,body.sr-map-themed .sr-ad-card,body.sr-map-themed .sr-account-backbone-panel{background:var(--sr-map-panel)!important;border-color:var(--sr-map-line)!important}
+        body.sr-map-themed .sr-room-card,body.sr-map-themed .sr-product-card,body.sr-map-themed .sr-feature-grid article,body.sr-map-themed .sr-functional-panel,body.sr-map-themed .sr-studio-board{background:var(--sr-map-card)!important;border-color:var(--sr-map-line)!important}
+        body.sr-map-themed .sr-buy-btn,body.sr-map-themed .sr-nav-btn.active{background:linear-gradient(135deg,var(--sr-map-accent),var(--sr-map-accent-2))!important;color:#06101f!important}
+        body.sr-map-themed .sr-mini-btn,body.sr-map-themed .sr-nav-btn{border-color:var(--sr-map-line)!important;background:rgba(255,255,255,.1)!important}
+        .sr-map-theme-hero{min-height:13rem;border-radius:1rem;background-size:cover;background-position:center;display:grid;align-content:end;padding:1rem;border:1px solid var(--sr-map-line,rgba(255,255,255,.16));box-shadow:inset 0 0 0 999px rgba(2,8,19,.22)}
+        .sr-map-theme-hero strong{font-size:1.8rem;line-height:1}.sr-map-theme-hero span{color:var(--sr-map-accent,#61efff);font-weight:1000;text-transform:uppercase;letter-spacing:.12em}
+        .sr-map-perk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:.65rem}.sr-map-perk-card{padding:.8rem;border:1px solid var(--sr-map-line,rgba(255,255,255,.14));border-radius:.9rem;background:rgba(255,255,255,.07)}
+        .sr-map-perk-card.active{box-shadow:0 0 0 2px var(--sr-map-accent,#61efff)}.sr-map-discount-code{display:inline-flex;align-items:center;gap:.45rem;padding:.45rem .6rem;border-radius:.7rem;background:rgba(255,255,255,.12);font-weight:1000;color:#fff}
+      `;
+      document.head.appendChild(style);
+    },
+
+    applyTheme(mapName, persist = true) {
+      const entry = this.MAPS[mapName];
+      if (!entry) return null;
+      this.installThemeStyles();
+      const body = document.body;
+      body.classList.add('sr-map-themed');
+      body.dataset.srMap = entry.slug;
+      body.style.setProperty('--sr-map-image', `url('${entry.image}')`);
+      body.style.setProperty('--sr-map-accent', entry.accent);
+      body.style.setProperty('--sr-map-accent-2', entry.accent2);
+      body.style.setProperty('--sr-map-panel', entry.panel);
+      body.style.setProperty('--sr-map-card', entry.card);
+      body.style.setProperty('--sr-map-line', entry.line);
+      body.style.setProperty('--sr-map-glow', `${entry.accent}33`);
+      body.style.setProperty('--sr-map-glow-2', `${entry.accent2}2b`);
+      if (persist) {
+        localStorage.setItem(this.STORE_KEY, JSON.stringify({ map:mapName, slug:entry.slug, discountCode:entry.discountCode, at:new Date().toISOString() }));
+      }
+      return entry;
+    },
+
+    restoreTheme() {
+      const name = this.currentMapName();
+      if (name) this.applyTheme(name, false);
     },
 
     chooseMap(mapName, container) {
-      const entry = this.MAPS[mapName];
+      const entry = this.applyTheme(mapName, true);
       if (!entry) { toast('Unknown map.', 'error'); return; }
-      root.recordMapChoice?.(mapName, entry.perk);
-      toast(`Map: ${entry.icon} ${mapName} — Perk: ${entry.perk}`, 'success');
-      this.renderPerks(container);
+      root.recordMapChoice?.(mapName, `${entry.perk} - ${entry.discountLabel} (${entry.discountCode})`);
+      root.patchAppStateSection?.('mapTheme', { activeMap:mapName, discountCode:entry.discountCode, discountUrl:this.discountUrl(entry), theme:entry.slug });
+      toast(`Map active: ${mapName}. Perk code ${entry.discountCode} is ready.`, 'success');
+      this.renderPerks(container || document.getElementById('srMapPerksContainer'));
     },
 
     renderPerks(container) {
       if (!container) return;
+      this.installThemeStyles();
       const account = root.getAccountBackbone?.();
-      const perks   = account?.mapChange?.perks || [];
-      const recent  = account?.mapChange?.recentMap || '';
+      const perks = account?.mapChange?.perks || [];
+      const recent = this.currentMapName();
+      const active = this.MAPS[recent] || null;
       container.innerHTML = `
-        <div style="margin-bottom:.75rem;">
-          <strong style="color:#b19c7d">Current Map:</strong> ${esc(recent || 'None selected')}
+        <div class="sr-map-theme-hero" style="background-image:linear-gradient(180deg,rgba(2,8,19,.08),rgba(2,8,19,.82)),url('${esc(active?.image || '/static/images/tropical-hero.jpg')}')">
+          <span>${esc(active ? `${active.icon} Active Map` : 'Choose a map')}</span>
+          <strong>${esc(recent || 'No map selected')}</strong>
+          <p>${esc(active?.perk || 'Pick one map to change the full background, panel colors, and active account perk.')}</p>
         </div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.75rem;margin-bottom:1rem;">
+        <div class="sr-map-perk-grid" style="margin-top:.8rem;">
           ${Object.entries(this.MAPS).map(([name, info]) => `
-            <button class="sr-mini-btn" style="text-align:left;${recent === name ? 'outline:2px solid #b19c7d;' : ''}"
-              onclick="window.SupportRDRebuild.mapPerks.chooseMap('${esc(name)}', document.getElementById('srMapPerksHistory'))">
-              ${esc(info.icon)} <strong>${esc(name)}</strong><br>
-              <small style="color:#999">${esc(info.perk)}</small>
-            </button>
+            <article class="sr-map-perk-card ${recent === name ? 'active' : ''}">
+              <span>${esc(info.icon)}</span>
+              <strong>${esc(name)}</strong>
+              <p>${esc(info.perk)}</p>
+              <small>${esc(info.discountLabel)}</small>
+              <button class="sr-mini-btn" type="button" data-map-choice="${esc(name)}">${recent === name ? 'Perk Active' : 'Activate Map'}</button>
+            </article>
           `).join('')}
         </div>
-        <div id="srMapPerksHistory">
-          ${perks.length ? `<strong style="color:#888">Perk History</strong>` +
-            perks.slice(0, 10).map(p => `
-              <div style="border-bottom:1px solid #1a1a1a;padding:.4rem 0;font-size:.85rem;">
-                <span style="color:#b19c7d">${esc(p.map)}</span> — ${esc(p.perk)}
-                <small style="color:#555;display:block">${esc(p.at?.slice(0, 10) || '')}</small>
+        ${active ? `
+          <article class="sr-map-perk-card active" style="margin-top:.8rem;">
+            <strong>Active Discount</strong>
+            <p>${esc(active.discountLabel)}</p>
+            <span class="sr-map-discount-code">${esc(active.discountCode)}</span>
+            <a class="sr-buy-btn" href="${esc(this.discountUrl(active))}" target="_blank" rel="noopener">Open Shopify With Discount</a>
+            <ul>${active.details.map(item=>`<li>${esc(item)}</li>`).join('')}</ul>
+          </article>
+        ` : ''}
+        <div id="srMapPerksHistory" class="sr-output-box" style="margin-top:.8rem;">
+          ${perks.length ? `<strong>Perk History</strong>` +
+            perks.slice(0, 8).map(p => `
+              <div style="border-top:1px solid rgba(255,255,255,.1);padding:.45rem 0;">
+                <span style="color:var(--sr-map-accent,#61efff)">${esc(p.map)}</span> - ${esc(typeof p.perk === 'string' ? p.perk : p.perk?.label || '')}
+                <small style="display:block">${esc(p.at?.slice(0, 10) || '')}</small>
               </div>`).join('') :
-            '<p style="color:#666;font-size:.85rem">No perk history yet. Choose a map!</p>'}
+            '<p>No perk history yet. Choose a map to activate the first one.</p>'}
         </div>`;
     }
   };
@@ -1066,12 +1257,18 @@
     });
 
     document.getElementById('hairAnalyzeBtn').addEventListener('click', async () => {
-      result.textContent = 'Analyzing…';
-      const analysis = await root.hairAnalysis.runAnalysis(video, canvas, a => {
+      result.innerHTML = '<strong>Listening to the camera frame...</strong><p style="margin:.25rem 0;color:#ccc;">Hold still while SupportRD captures left and right views, then it will read the actual scan summary.</p>';
+      await root.hairAnalysis.runAnalysis(video, canvas, a => {
+        if (a.error) {
+          result.innerHTML = `<strong>Analysis needs attention:</strong> ${esc(a.error)}`;
+          refreshStatus();
+          return;
+        }
         result.innerHTML = `
           <strong>Texture:</strong> ${esc(a.texture)}<br>
           <strong>Conditions:</strong> ${esc((a.conditions || []).join(', '))}<br>
-          <strong>Summary:</strong> ${esc(a.summary)}`;
+          <strong>Summary:</strong> ${esc(a.summary)}<br>
+          <small style="color:#9ff9ff">ARIA readback: ${esc(a.spoken || '')}</small>`;
         refreshStatus();
       });
     });
@@ -1205,6 +1402,26 @@
 
     // Shopify buy buttons
     SHOPIFY.wireAllBuyButtons();
+    MAP_PERKS.restoreTheme();
+
+    if (!root.__surfaceUpgradeEventsBound) {
+      root.__surfaceUpgradeEventsBound = true;
+      document.addEventListener('click', event => {
+        const mapBtn = event.target.closest?.('[data-map-choice]');
+        if (mapBtn) {
+          event.__srMapHandled = true;
+          root.mapPerks.chooseMap(mapBtn.dataset.mapChoice, document.getElementById('srMapPerksContainer'));
+        }
+        const clipBtn = event.target.closest?.('[data-free-clip]');
+        if (clipBtn) {
+          root.faqLounge.showClip(Number(clipBtn.dataset.freeClip || 0), document.getElementById('srTikTokReelContainer'));
+        }
+        if (event.target.closest?.('[data-reel-play]')) {
+          event.__srReelHandled = true;
+          root.faqLounge.playFreeClipStream(document.getElementById('srTikTokReelContainer'));
+        }
+      });
+    }
 
     // Update auth UI state
     const user = root.auth.getUser();

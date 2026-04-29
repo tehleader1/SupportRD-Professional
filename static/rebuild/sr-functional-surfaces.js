@@ -136,10 +136,10 @@
 
 
   function renderFaq(){
-    return panelShell('faq','10 SECOND REEL + FAQ','FAQ Lounge','Actual FAQ Lounge with TikTok-style 10-second hair reel mount, real frequently asked questions, developer feed comments, ratings, and mentions saved to account.',`
+    return panelShell('faq','10 SECOND CLIPS + FAQ','FAQ Lounge','FAQ Lounge with a free built-in 10-second short clip streamer, real frequently asked questions, developer feed comments, ratings, and mentions saved to account.',`
       <section class="sr-room-grid">
         <article class="sr-room-card sr-reel-card">
-          <h3>10 Second TikTok Hair Reel</h3>
+          <h3>10 Second Free Short Clip Streamer</h3>
           <div id="srTikTokReelContainer" class="sr-real-room-mount"></div>
           <button class="sr-buy-btn" data-reel-play type="button">Play 10s Reel</button>
         </article>
@@ -166,12 +166,13 @@
 
 
   function renderMap(){
+    const mapNames = root.mapPerks?.getMapNames?.() || ['Swimming Hole','Snow Mountain Pass','Autumn Trail','Desert Cliff','Blissful Geysers','Chocolate Factory'];
     return panelShell('map','MAP CHANGE + PERKS','Map Change','Choose a map to change the whole app background/layout and reveal perks in a collapsible window.',`
       <section class="sr-room-grid">
         <article class="sr-room-card" style="grid-column:1/-1">
           <h3>Change Map</h3>
           <div class="sr-map-choice-grid">
-            ${['Swimming Hole','Snow Mountain Pass','Autumn Trail','Desert Cliff','Blissful Geysers','Chocolate Factory'].map(name=>`<button class="sr-mini-btn" type="button" data-map-choice="${name}">${name}</button>`).join('')}
+            ${mapNames.map(name=>`<button class="sr-mini-btn" type="button" data-map-choice="${esc(name)}">${esc(name)}</button>`).join('')}
           </div>
           <details open class="sr-map-perks-details">
             <summary>Available Perks</summary>
@@ -202,6 +203,14 @@ function renderMarket(){
             <div class="sr-laser-bar" style="--h:64%"><span>Catalog</span></div>
           </div>
         </article>
+      </section>
+    `, root.assets?.artists);
+  }
+
+  function renderGlobalTracker(){
+    return root.renderGlobalTrackerMarkup?.() || panelShell('globaltracker','GLOBAL TRACKER','Global Tracker','VIP market watch, website motion, plant delivery, and in-person order routing are loading.',`
+      <section class="sr-room-grid">
+        <article class="sr-room-card"><h3>Tracker Loading</h3><p>Refresh the page if this panel does not fill in.</p></article>
       </section>
     `, root.assets?.artists);
   }
@@ -306,7 +315,7 @@ function renderMarket(){
     const stage = document.querySelector('#remoteStage');
     if (!stage) return;
     document.querySelectorAll('[data-route]').forEach(btn=>btn.classList.toggle('active', btn.dataset.route === route));
-    const map = { profile:renderProfile, diary:renderDiary, studio:renderStudio, faq:renderFaq, market:renderMarket, map:renderMap, catalog:renderCatalog, settings:renderSettings, aria:renderAria, jake:renderJake };
+    const map = { profile:renderProfile, diary:renderDiary, studio:renderStudio, faq:renderFaq, market:renderMarket, map:renderMap, globaltracker:renderGlobalTracker, catalog:renderCatalog, settings:renderSettings, aria:renderAria, jake:renderJake };
     if (map[route]) stage.innerHTML = map[route]();
     else if (route === 'map') return renderMap();
     else stage.innerHTML = renderDiary();
@@ -340,6 +349,16 @@ function renderMarket(){
         const paid = !!document.querySelector('[data-market-paid]')?.checked;
         try{ root.linkMarketAccount?.(email, paid); }catch{}
         functionalRenderPanel('market');
+      }
+
+      const mapChoice = event.target.closest('[data-map-choice]');
+      if (mapChoice) {
+        if (event.__srMapHandled) return;
+        event.__srMapHandled = true;
+        try {
+          root.mapPerks?.chooseMap?.(mapChoice.dataset.mapChoice, document.querySelector('#srMapPerksContainer'));
+        } catch {}
+        return;
       }
 
       if (event.target.closest('[data-profile-scan]')) {
@@ -412,24 +431,9 @@ function renderMarket(){
       }
 
       if (event.target.closest('[data-reel-play]')) {
-        const steps = [
-          ['0-2s: Hook — Have healthy hair.', root.assets?.healthyHair],
-          ['2-4s: Product close-up — Bright Droplets / Formula.', root.assets?.brightDroplets],
-          ['4-6s: Show confidence and profile credibility.', root.assets?.support_model],
-          ['6-8s: Catalog / product family appears.', root.assets?.productFamily],
-          ['8-10s: Call to action — Open Catalog / Ask ARIA.', root.assets?.premiumPro]
-        ];
-        let i = 0;
-        const text = document.querySelector('#reelText');
-        const img = document.querySelector('#reelStage img');
-        const run = () => {
-          if (!text || !img) return;
-          text.textContent = steps[i][0];
-          img.src = steps[i][1] || img.src;
-          i += 1;
-          if (i < steps.length) setTimeout(run, 2000);
-        };
-        run();
+        if (event.__srReelHandled) return;
+        event.__srReelHandled = true;
+        root.faqLounge?.playFreeClipStream?.(document.querySelector('#srTikTokReelContainer'));
       }
     });
   }
