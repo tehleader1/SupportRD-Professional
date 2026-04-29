@@ -1,11 +1,12 @@
 (()=>{
-  const BUILD = 'surface-upgrades-20260428a';
+  const BUILD = 'global-sweep-20260429a';
   const modules = [
     '/static/rebuild/sr-app-state.js',
     '/static/rebuild/sr-account-backbone.js',
     '/static/rebuild/sr-commerce-rank.js',
     '/static/rebuild/sr-real-integrations.js',
     '/static/rebuild/sr-global-tracker.js',
+    '/static/rebuild/sr-global-sweep.js',
     '/static/rebuild/sr-functional-surfaces.js',
     '/static/rebuild/sr-studio-motherboard.js',
     '/static/rebuild/sr-voice-assistants.js',
@@ -47,6 +48,7 @@
     root.initAccountBackbone?.();
     root.initCommerceRank?.();
     root.initGlobalTracker?.();
+    root.initGlobalSweep?.();
     root.initFunctionalSurfaces?.();
     root.initStudioMotherboard?.();
     root.initVoiceAssistants?.();
