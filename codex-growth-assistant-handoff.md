@@ -24,37 +24,38 @@ The assistant should work across:
 
 ## What Was Added In This Pass
 
-### New user-facing pages
-- `/growth-assistant`
-- `/growth-hub`
+### Backend-only outreach engine
+- `backend/outreach_engine.py`
+- `/api/outreach/report`
+- `/api/outreach/opportunities`
+- `/api/outreach/approve/<id>`
+- `/api/outreach/reject/<id>`
+- `/api/outreach/tick`
+- `/admin/outreach-control` protected by `OUTREACH_ADMIN_TOKEN` or local-only access
 
 ### Homepage changes
 - added homepage metadata and basic structured data
 - added a search-focused structure section
-- added a direct link to the Growth Assistant page
+- removed public Growth Assistant links so the bot stays off the visible website
 
 ### Backend changes
 - added `/api/growth-assistant`
-- added sitemap entries for growth pages
+- added backend-only outreach opportunity generation, queueing, approval, rejection, and logging
+- removed growth pages from public sitemap
 
 ## Current Behavior Of The Growth Assistant Page
 
-The page:
-- gives SupportRD a dedicated growth chat surface
-- stores an `always on` setting in browser local storage
-- stores recent chat history locally in the browser
-- supports lane-based prompts:
-  - general
-  - homepage
-  - seo
-  - outreach
-  - stories
-  - leads
+The backend engine:
+- runs in backend mode
+- seeds and refreshes outreach opportunities
+- logs heartbeat/status events
+- supports draft categories for blogs, guest posts, videos, stories, social comment drafts, salon/hair-store outreach, radio, college/career placements, keyword clusters, and review pitches
+- exposes a hidden protected admin control panel for review
 
 Important:
-- it is always-available in the browser when enabled
+- it is not visible on the public website UI
 - it is not an autonomous internet bot
-- sending, posting, publishing, or emailing still requires explicit approval and proper account connections
+- sending, posting, publishing, commenting, or emailing still requires explicit approval and proper account connections
 
 ## What Codex Should Do Next
 
@@ -75,4 +76,4 @@ Do not assume:
 
 ## Quick Start Prompt For Codex
 
-Use this project as the SupportRD Growth Assistant. Inspect the homepage, growth pages, and `/api/growth-assistant` endpoint first. Keep SupportRD centered on natural-hair solutions, improve structure and search clarity, and suggest the highest-leverage next implementation step before making broad changes.
+Use this project as the SupportRD Growth Assistant. Inspect the homepage, backend-only outreach engine, `/api/outreach/report`, and `/api/growth-assistant` endpoint first. Keep SupportRD centered on natural-hair solutions, improve structure and search clarity, and suggest the highest-leverage next implementation step before making broad changes.

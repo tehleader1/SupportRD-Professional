@@ -25,6 +25,7 @@ from openai import OpenAI
 
 from engine_routes import engine
 from content_engine import trending_products, reorder_suggestions
+from backend.outreach_engine import outreach_engine_bp
 from backend.viral_engine import viral_engine_bp
 from backend.render_status import render_status_bp
 
@@ -32,6 +33,7 @@ app = Flask(__name__, static_folder="static")
 app.secret_key = os.environ.get("FLASK_SECRET_KEY") or os.urandom(32)
 
 app.register_blueprint(engine)
+app.register_blueprint(outreach_engine_bp)
 app.register_blueprint(viral_engine_bp)
 app.register_blueprint(render_status_bp)
 
@@ -6961,12 +6963,12 @@ def fallback_growth_reply(lane, message):
     route_map = {
         "homepage": "/",
         "seo": "/hair-problems",
-        "outreach": "/growth-hub",
-        "stories": "/growth-assistant",
+        "outreach": "/hair-problems",
+        "stories": "/hair-problems",
         "leads": "/Globaltracker",
-        "general": "/growth-hub",
+        "general": "/hair-problems",
     }
-    route = route_map.get(lane_label, "/growth-hub")
+    route = route_map.get(lane_label, "/hair-problems")
     if not clean:
         clean = "improve SupportRD growth"
     return (
@@ -7317,12 +7319,12 @@ def seo_hair_problems():
 
 @app.route("/growth-assistant")
 def growth_assistant_page():
-    return send_from_directory("static", "growth-assistant.html")
+    abort(404)
 
 
 @app.route("/growth-hub")
 def growth_hub_page():
-    return send_from_directory("static", "growth-hub.html")
+    abort(404)
 
 
 @app.route("/studio-premium")
@@ -7383,8 +7385,6 @@ def build_public_sitemap_entries():
     today = datetime.utcnow().date().isoformat()
     entries = [
         ("https://supportrd.com/", "daily", "1.0"),
-        ("https://supportrd.com/growth-assistant", "daily", "0.9"),
-        ("https://supportrd.com/growth-hub", "daily", "0.9"),
         ("https://supportrd.com/remote", "daily", "0.9"),
         ("https://supportrd.com/local-remote", "daily", "0.9"),
     ]
@@ -7399,6 +7399,7 @@ def robots_txt():
         "User-agent: *",
         "Allow: /",
         "Disallow: /api/",
+        "Disallow: /admin/",
         "Disallow: /proxy/",
         "Disallow: /shopify/",
         "Sitemap: https://supportrd.com/sitemap.xml",

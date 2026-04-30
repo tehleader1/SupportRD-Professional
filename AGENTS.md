@@ -25,8 +25,6 @@ Secondary experiences like Studio, Diary, Profile, FAQ, Market, and AI assistant
 
 Important user-facing routes already in the repo:
 - `/`
-- `/growth-assistant`
-- `/growth-hub`
 - `/hair-problems`
 - `/identity-profile`
 - `/premium-pro`
@@ -36,8 +34,14 @@ Important user-facing routes already in the repo:
 
 Important backend endpoints already in the repo:
 - `/api/growth-assistant`
+- `/api/outreach/report`
+- `/api/outreach/opportunities`
+- `/api/outreach/approve/<id>`
 - `/api/engine/marketing`
 - `/api/aria`
+
+Important hidden admin route:
+- `/admin/outreach-control` with `OUTREACH_ADMIN_TOKEN` or local-only access
 
 ## How To Work
 
@@ -46,6 +50,7 @@ Important backend endpoints already in the repo:
 - Use permission-based growth systems. Planning, drafting, and review are fine; auto-posting, spam, or deceptive promotion are not.
 - When asked for rankings, explain that rankings come from quality, relevance, crawlability, trust, and links, not direct platform manipulation.
 - Tie growth ideas back to actual site structure whenever possible.
+- Keep the growth/outreach bot backend-only. Do not expose a public Growth Assistant page or public control panel.
 
 ## Boundaries
 
