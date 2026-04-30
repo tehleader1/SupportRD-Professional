@@ -1,5 +1,5 @@
 (()=>{
-  const BUILD = 'diary-backlink-video-20260430a';
+  const BUILD = 'globaltracker-lock-20260430b';
   const modules = [
     '/static/rebuild/sr-app-state.js',
     '/static/rebuild/sr-account-backbone.js',
@@ -9,6 +9,7 @@
     '/static/rebuild/sr-global-sweep.js',
     '/static/rebuild/sr-functional-surfaces.js',
     '/static/rebuild/sr-diary-backlink-video.js',
+    '/static/rebuild/sr-globaltracker-access-lock.js',
     '/static/rebuild/sr-studio-motherboard.js',
     '/static/rebuild/sr-voice-assistants.js',
     '/static/rebuild/sr-remote-glide.js'
@@ -51,6 +52,7 @@
     root.initGlobalTracker?.();
     root.initGlobalSweep?.();
     root.initFunctionalSurfaces?.();
+    root.initGlobalTrackerAccessLock?.();
     root.initStudioMotherboard?.();
     root.initVoiceAssistants?.();
     root.initRemoteGlide?.();
