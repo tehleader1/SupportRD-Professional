@@ -6945,6 +6945,110 @@ def marketing():
     }
 
 
+GROWTH_LANE_GUIDANCE = {
+    "general": "Give a direct practical growth answer tied to SupportRD's real site structure.",
+    "homepage": "Prioritize homepage message clarity, hair-solution positioning, trust, product routes, and internal links.",
+    "seo": "Prioritize crawlable search-entry pages, metadata, internal links, buyer-intent terms, and authority-building.",
+    "outreach": "Draft permission-based outreach plans, target-list criteria, and review queues. Do not recommend spam or automatic sending.",
+    "stories": "Draft story, caption, and campaign ideas tied to approved SupportRD images or user-provided personal photos.",
+    "leads": "Plan lead tracking, routing, consent, follow-up queues, and clean handoff to products/support without exposing private data.",
+}
+
+
+def fallback_growth_reply(lane, message):
+    clean = (message or "").strip()
+    lane_label = (lane or "general").strip().lower()
+    route_map = {
+        "homepage": "/",
+        "seo": "/hair-problems",
+        "outreach": "/growth-hub",
+        "stories": "/growth-assistant",
+        "leads": "/Globaltracker",
+        "general": "/growth-hub",
+    }
+    route = route_map.get(lane_label, "/growth-hub")
+    if not clean:
+        clean = "improve SupportRD growth"
+    return (
+        f"Verified current state: SupportRD has the Growth Assistant lane, hair problem page, product mirrors, Globaltracker, and Shopify checkout routes to build from.\n\n"
+        f"Recommended next step for {lane_label}: turn '{clean[:140]}' into one focused page or queue item that points visitors toward a hair solution, ARIA support, and a product path.\n\n"
+        f"Action plan:\n"
+        f"1. Write one clear headline that names the hair concern or buyer intent.\n"
+        f"2. Add a short trust block: product guidance, real support, delivery/refund clarity, and no fake claims.\n"
+        f"3. Link internally to {route}, /hair-problems, and the most relevant product page.\n"
+        f"4. If outreach is involved, draft for approval first. Do not auto-send, spam, or fake engagement."
+    )
+
+
+@app.route("/api/growth-assistant", methods=["GET", "POST"])
+def api_growth_assistant():
+    if request.method == "GET":
+        return jsonify({
+            "ok": True,
+            "role": "SupportRD Growth Assistant",
+            "lanes": list(GROWTH_LANE_GUIDANCE.keys()),
+            "focus": [
+                "homepage clarity",
+                "natural-hair SEO entry pages",
+                "product trust paths",
+                "permission-based outreach",
+                "story and caption planning",
+                "lead routing",
+            ],
+            "boundaries": [
+                "no spam",
+                "no fake engagement",
+                "no automatic posting or emailing without approval",
+                "no deceptive platform manipulation",
+            ],
+        })
+
+    body = request.get_json(silent=True) or {}
+    lane = (body.get("lane") or "general").strip().lower()
+    if lane not in GROWTH_LANE_GUIDANCE:
+        lane = "general"
+    message = (body.get("message") or "").strip()
+    history = body.get("history") or []
+    if not message:
+        return jsonify({"ok": True, "reply": fallback_growth_reply(lane, "improve SupportRD growth")})
+
+    if not client:
+        return jsonify({"ok": True, "reply": fallback_growth_reply(lane, message), "mode": "fallback"})
+
+    safe_history = []
+    for item in history[-6:]:
+        role = "assistant" if item.get("role") == "assistant" else "user"
+        content = str(item.get("content") or "")[:900]
+        if content:
+            safe_history.append({"role": role, "content": content})
+
+    system_prompt = (
+        "You are the SupportRD Growth Assistant and implementation partner for supportrd.com. "
+        "SupportRD should read first as a natural-hair solutions website with product guidance and real customer support. "
+        "Secondary experiences like Studio, Diary, Profile, FAQ, Market, and AI assistants should support that story instead of competing with it. "
+        "Separate verified current state from inferred opportunities. Be direct, strategic, and practical. "
+        "Keep growth ethical: no spam comments, fake engagement, ad injection, fake reviews, deceptive outreach, or automatic posting/emailing without explicit approval. "
+        "When rankings are discussed, explain that rankings come from quality, relevance, crawlability, trust, and links, not direct manipulation. "
+        f"Current lane: {lane}. Lane guidance: {GROWTH_LANE_GUIDANCE[lane]}"
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                *safe_history,
+                {"role": "user", "content": message[:1800]},
+            ],
+            temperature=0.35,
+            max_tokens=650,
+        )
+        reply = response.choices[0].message.content or fallback_growth_reply(lane, message)
+        return jsonify({"ok": True, "reply": reply, "mode": "ai"})
+    except Exception as exc:
+        return jsonify({"ok": True, "reply": fallback_growth_reply(lane, message), "mode": "fallback", "detail": str(exc)[:160]})
+
+
 SEO_LANDING_PAGES = {
     "hair-problems": {
         "title": "Hair Problems",
@@ -7211,6 +7315,16 @@ def seo_hair_problems():
     return render_support_seo_page("hair-problems")
 
 
+@app.route("/growth-assistant")
+def growth_assistant_page():
+    return send_from_directory("static", "growth-assistant.html")
+
+
+@app.route("/growth-hub")
+def growth_hub_page():
+    return send_from_directory("static", "growth-hub.html")
+
+
 @app.route("/studio-premium")
 def seo_studio_premium():
     return render_support_seo_page("studio")
@@ -7269,6 +7383,8 @@ def build_public_sitemap_entries():
     today = datetime.utcnow().date().isoformat()
     entries = [
         ("https://supportrd.com/", "daily", "1.0"),
+        ("https://supportrd.com/growth-assistant", "daily", "0.9"),
+        ("https://supportrd.com/growth-hub", "daily", "0.9"),
         ("https://supportrd.com/remote", "daily", "0.9"),
         ("https://supportrd.com/local-remote", "daily", "0.9"),
     ]
