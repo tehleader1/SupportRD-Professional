@@ -7,6 +7,7 @@ venv/
 .codex_server_deps/
 instance/
 users.db
+global_sweep.db
 studio_data/
 *.log
 .DS_Store

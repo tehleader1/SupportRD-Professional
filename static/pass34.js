@@ -1,5 +1,5 @@
 (()=>{
-  const BUILD = 'global-sweep-20260429a';
+  const BUILD = 'global-sweep-agent-20260429b';
   const modules = [
     '/static/rebuild/sr-app-state.js',
     '/static/rebuild/sr-account-backbone.js',

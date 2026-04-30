@@ -7,6 +7,36 @@
     compactIntake: 'Waiting for the next intake. Paste a large note, compress it, and route it into live vs historic tracking.',
     marketUpdatedAt: '',
     plantLayer: 'Inner Charlotte',
+    globalSweep: {
+      status: 'ready',
+      updated_at: '',
+      privacy: 'Public sweep masks IP addresses, personal addresses, contact info, and per-person revenue.',
+      traffic: [
+        { window_minutes:5, events:0, visitors:0, hot:false, mode:'steady_state', top_paths:[] },
+        { window_minutes:60, events:0, visitors:0, hot:false, mode:'steady_state', top_paths:[] },
+        { window_minutes:1440, events:0, visitors:0, hot:false, mode:'steady_state', top_paths:[] }
+      ],
+      lead_requests_24h: 0,
+      conversions_24h: 0,
+      top_paths: [],
+      lanes: [
+        { lane:'Hair scan rescue', target:'Profile, hair analysis, FAQ, and Catalog visitors', route:'Profile -> ARIA -> Catalog', cta:'Profile scan', score:42 },
+        { lane:'Product buyer', target:'Catalog, Shopify, products, discounts, and perks', route:'Catalog -> Shopify checkout', cta:'Discount-aware checkout', score:38 },
+        { lane:'Studio creator', target:'Studio, Jake, recording, and export users', route:'Studio -> Jake -> Studio tier', cta:'Studio tier', score:34 },
+        { lane:'Market VIP', target:'Globaltracker, Market, VIP, and options views', route:'Globaltracker -> VIP confirm', cta:'VIP confirm', score:30 }
+      ],
+      next_actions: []
+    },
+    nightOptions: {
+      status: 'ready',
+      updated_at: '',
+      label: 'Latest overnight read has not been pulled yet.',
+      market_status: '',
+      options_entitled: false,
+      warnings: [],
+      candidates: [],
+      note: 'Research-only. Pull the Market reader to show the latest system-ranked candidates.'
+    },
     marketLive: [
       { slot:'A', symbol:'Ticker A', market:'Nasdaq', captured:'Overnight watch', price:'--', premium:'--', calls:'--', puts:'--', bias:'Waiting', route:'20-40 min', liveScore:72 },
       { slot:'B', symbol:'Ticker B', market:'S&P 500', captured:'Pre-market watch', price:'--', premium:'--', calls:'--', puts:'--', bias:'Waiting', route:'30-60 min', liveScore:68 },
@@ -60,6 +90,101 @@
     const clean = String(value || '').replace(/\s+/g, ' ').trim();
     if (!clean) return DEFAULT_STATE.compactIntake;
     return clean.length > 260 ? `${clean.slice(0, 257)}...` : clean;
+  }
+
+  function num(value, fallback = 0){
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  function fmt(value, digits = 2){
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return '--';
+    return parsed >= 100 ? parsed.toFixed(2) : parsed.toFixed(digits);
+  }
+
+  function renderGlobalSweep(state){
+    const sweep = { ...clone(DEFAULT_STATE.globalSweep), ...(state.globalSweep || {}) };
+    const traffic = Array.isArray(sweep.traffic) ? sweep.traffic : [];
+    const lanes = Array.isArray(sweep.lanes) ? sweep.lanes : [];
+    const topPaths = Array.isArray(sweep.top_paths) ? sweep.top_paths : [];
+    return `
+      <section class="sr-global-band sweep">
+        <div class="sr-global-band-head">
+          <span>Global Sweep Client Finder</span>
+          <strong>${esc(sweep.status === 'loading' ? 'Sweeping live signals' : 'Client routes ready')}</strong>
+        </div>
+        <p class="sr-global-disclaimer">Find likely clients by behavior and intent, then route them into the right SupportRD lane. No public raw IPs, addresses, private revenue, or contact data.</p>
+        <div class="sr-global-actions">
+          <button class="sr-buy-btn" type="button" data-global-action="refresh-sweep">Refresh Client Sweep</button>
+          <span class="sr-global-stamp">${esc(sweep.updated_at || 'Not refreshed yet')}</span>
+        </div>
+        <div class="sr-sweep-stats">
+          ${traffic.map(item=>`
+            <article>
+              <span>${esc(item.window_minutes)}m</span>
+              <strong>${esc(item.visitors || 0)} visitors</strong>
+              <small>${esc(item.events || 0)} events - ${esc(item.mode || 'steady_state')}</small>
+            </article>
+          `).join('')}
+          <article><span>24h leads</span><strong>${esc(sweep.lead_requests_24h || 0)}</strong><small>contact requests captured</small></article>
+          <article><span>24h conversions</span><strong>${esc(sweep.conversions_24h || 0)}</strong><small>account/shop actions</small></article>
+        </div>
+        <div class="sr-global-grid sweep">
+          ${lanes.map(lane=>`
+            <article class="sr-global-card">
+              <span>${esc(lane.lane)}</span>
+              <strong>${esc(lane.score || 0)} sweep score</strong>
+              <p>${esc(lane.target)}</p>
+              <small>${esc(lane.route)}</small>
+              <b>${esc(lane.cta || 'Route now')}</b>
+            </article>
+          `).join('')}
+        </div>
+        <div class="sr-global-note">${esc(sweep.privacy)}</div>
+        ${topPaths.length ? `
+          <div class="sr-sweep-paths">
+            ${topPaths.slice(0, 6).map(path=>`<span>${esc(path.intent)} - ${esc(path.path)} (${esc(path.hits)} hits)</span>`).join('')}
+          </div>
+        ` : '<div class="sr-global-note">No live local visitor rows are stored yet. The sweep is wired and will populate as traffic lands in SupportRD.</div>'}
+      </section>
+    `;
+  }
+
+  function renderNightOptions(state){
+    const readout = { ...clone(DEFAULT_STATE.nightOptions), ...(state.nightOptions || {}) };
+    const candidates = Array.isArray(readout.candidates) ? readout.candidates : [];
+    return `
+      <section class="sr-global-band night-options">
+        <div class="sr-global-band-head">
+          <span>Last Night / Latest Market Run</span>
+          <strong>${esc(readout.options_entitled ? 'Options feed connected' : 'Stock pressure read')}</strong>
+        </div>
+        <p class="sr-global-disclaimer">${esc(readout.note || DEFAULT_STATE.nightOptions.note)}</p>
+        <div class="sr-global-actions">
+          <button class="sr-buy-btn" type="button" data-global-action="refresh-night-options">Pull Market Reader</button>
+          <span class="sr-global-stamp">${esc(readout.updated_at || readout.label || 'Not pulled yet')}</span>
+        </div>
+        ${readout.market_status ? `<div class="sr-global-note">${esc(readout.label)} - ${esc(readout.market_status)}</div>` : ''}
+        ${candidates.length ? `
+          <div class="sr-night-options-list">
+            ${candidates.map(item=>`
+              <article class="sr-global-card">
+                <span>#${esc(item.rank)} ${esc(item.symbol)}</span>
+                <strong>${esc(item.direction)} - ${esc(item.state)}</strong>
+                <p>Pressure ${esc(item.pressure)} / Score ${esc(item.score)} / ${esc(item.route)}</p>
+                <small>Last ${esc(fmt(item.last_price))} - target ${esc(item.target)} - ${esc(item.pattern || 'pattern pending')}</small>
+              </article>
+            `).join('')}
+          </div>
+        ` : '<div class="sr-global-note">No ranked market candidates are loaded yet. Pull the Market Reader to display the latest run.</div>'}
+        ${(readout.warnings || []).length ? `
+          <div class="sr-global-warning">
+            ${readout.warnings.slice(0, 2).map(warning=>`<span>${esc(warning)}</span>`).join('')}
+          </div>
+        ` : ''}
+      </section>
+    `;
   }
 
   function marketTable(rows, historic = false){
@@ -160,6 +285,9 @@
           <div class="sr-output-box">${esc(state.compactIntake)}</div>
         </section>
 
+        ${renderGlobalSweep(state)}
+        ${renderNightOptions(state)}
+
         <section class="sr-global-band vip">
           <div class="sr-global-band-head">
             <span>$25,000 Inner Circle Market Group</span>
@@ -210,14 +338,78 @@
     write(state);
   }
 
+  async function refreshClientSweep(){
+    const loading = read();
+    loading.globalSweep = { ...(loading.globalSweep || {}), status:'loading', updated_at:'Refreshing...' };
+    write(loading);
+    root.renderFunctionalPanel?.('globaltracker');
+    try {
+      const response = await fetch('/api/globaltracker/client-sweep', { cache:'no-store' });
+      if (!response.ok) throw new Error(`Client sweep failed ${response.status}`);
+      const payload = await response.json();
+      const state = read();
+      state.globalSweep = { ...clone(DEFAULT_STATE.globalSweep), ...(payload || {}), status:'ready' };
+      write(state);
+    } catch (error) {
+      const state = read();
+      state.globalSweep = { ...(state.globalSweep || {}), status:'error', updated_at:new Date().toISOString(), privacy:`Client sweep could not refresh: ${error.message}` };
+      write(state);
+    }
+    root.renderFunctionalPanel?.('globaltracker');
+  }
+
+  async function refreshNightOptions(){
+    const loading = read();
+    loading.nightOptions = { ...(loading.nightOptions || {}), status:'loading', updated_at:'Pulling Market reader...' };
+    write(loading);
+    root.renderFunctionalPanel?.('globaltracker');
+    try {
+      const response = await fetch('/api/globaltracker/night-options', { cache:'no-store' });
+      if (!response.ok) throw new Error(`Market reader failed ${response.status}`);
+      const payload = await response.json();
+      const state = read();
+      state.nightOptions = { ...clone(DEFAULT_STATE.nightOptions), ...(payload || {}), status: payload?.ok ? 'ready' : 'error' };
+      if (Array.isArray(payload?.candidates) && payload.candidates.length) {
+        state.marketLive = payload.candidates.slice(0, 5).map(item=>({
+          slot: `#${item.rank}`,
+          symbol: item.symbol,
+          market: item.market || 'Market reader',
+          captured: payload.label || 'Latest system run',
+          price: fmt(item.last_price),
+          premium: payload.options_entitled ? 'see Market' : 'plan pending',
+          calls: payload.options_entitled ? 'live' : 'n/a',
+          puts: payload.options_entitled ? 'live' : 'n/a',
+          bias: `${item.direction || 'watch'} ${item.state || ''}`.trim(),
+          route: item.route || 'scanner',
+          liveScore: Math.round(num(item.score || item.pressure || 0))
+        }));
+        state.marketUpdatedAt = payload.updated_at || new Date().toISOString();
+      }
+      write(state);
+    } catch (error) {
+      const state = read();
+      state.nightOptions = { ...(state.nightOptions || {}), status:'error', updated_at:new Date().toISOString(), note:`Market reader could not refresh: ${error.message}` };
+      write(state);
+    }
+    root.renderFunctionalPanel?.('globaltracker');
+  }
+
   function bindEvents(){
     if (root.__globalTrackerEventsBound) return;
     root.__globalTrackerEventsBound = true;
-    document.addEventListener('click', event=>{
+    document.addEventListener('click', async event=>{
       const btn = event.target.closest?.('[data-global-action]');
       if (!btn) return;
       const state = read();
       const action = btn.dataset.globalAction;
+      if (action === 'refresh-sweep') {
+        await refreshClientSweep();
+        return;
+      }
+      if (action === 'refresh-night-options') {
+        await refreshNightOptions();
+        return;
+      }
       if (action === 'vip-confirm') {
         state.vipConfirmed = true;
         state.compactIntake = 'VIP view confirmed locally. Connect this to paid Shopify/Auth0 account verification before using it as real access control.';
@@ -253,8 +445,16 @@
       .sr-global-band textarea{width:100%;min-height:5.8rem;padding:.85rem;border-radius:.8rem;border:1px solid rgba(255,255,255,.15);background:rgba(3,8,19,.74);color:#fff;resize:vertical;margin-bottom:.7rem}
       .sr-global-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.7rem;min-width:0}
       .sr-global-grid.compact{grid-template-columns:repeat(auto-fit,minmax(12rem,1fr))}
+      .sr-global-grid.sweep{grid-template-columns:repeat(auto-fit,minmax(13.5rem,1fr))}
       .sr-global-grid.plant{grid-template-columns:repeat(auto-fit,minmax(14rem,1fr))}
       .sr-global-card{min-width:0;padding:.85rem;border:1px solid rgba(255,255,255,.13);border-radius:.85rem;background:rgba(255,255,255,.06);overflow-wrap:anywhere}
+      .sr-global-card b{display:block;margin-top:.55rem;color:#9ff9ff}.sr-global-stamp{font-size:.78rem;color:rgba(247,251,255,.68)}
+      .sr-sweep-stats,.sr-night-options-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(10.5rem,1fr));gap:.65rem;margin:.75rem 0}
+      .sr-sweep-stats article{padding:.75rem;border:1px solid rgba(97,239,255,.16);border-radius:.8rem;background:rgba(97,239,255,.06)}
+      .sr-sweep-stats span,.sr-sweep-paths span,.sr-global-warning span{display:block;color:#61efff;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;font-weight:1000}
+      .sr-sweep-stats strong{display:block;margin:.25rem 0;font-size:1.15rem}.sr-sweep-stats small{color:rgba(247,251,255,.68)}
+      .sr-sweep-paths,.sr-global-warning{display:grid;gap:.4rem;margin-top:.65rem}.sr-sweep-paths span,.sr-global-warning span{padding:.55rem;border-radius:.65rem;background:rgba(255,255,255,.07);color:#d9faff;text-transform:none;letter-spacing:0}
+      .sr-global-warning span{border:1px solid rgba(255,177,95,.28);background:rgba(255,177,95,.08)}
       .sr-global-card.active{box-shadow:0 0 0 2px rgba(97,239,255,.58)}
       .sr-global-table{display:block;max-width:100%;min-width:0;overflow-x:auto;overflow-y:hidden;padding-bottom:.25rem}
       .sr-global-row{width:66rem;max-width:none;display:grid;grid-template-columns:repeat(10,minmax(5.2rem,1fr));gap:.4rem;padding:.5rem;border:1px solid rgba(255,255,255,.1);border-radius:.65rem;background:rgba(255,255,255,.045);align-items:center}

@@ -153,6 +153,37 @@ def _score(personal,shopify):
                 matches.append({"personalIndex":pi,"shopifyIndex":si,"exact":exact,"score":len(exact),"personal":p,"shopify":s,"at":_utc()})
     return sorted(matches,key=lambda x:x["score"],reverse=True)[:100]
 
+def _mask_token(token):
+    raw=str(token or "")
+    if ":" not in raw:return raw[:48]+("..." if len(raw)>48 else "")
+    key,value=raw.split(":",1)
+    low=key.lower()
+    if "email" in low:
+        domain=value.split("@")[-1] if "@" in value else "email"
+        return f"{key}:***@{domain}"
+    if "phone" in low:
+        return f"{key}:***{value[-4:]}"
+    if "ip" in low:
+        return f"{key}:masked"
+    if any(part in low for part in ("customer","visitor","session","checkout","cart")) or low=="id":
+        return f"{key}:...{value[-6:]}"
+    return raw[:52]+("..." if len(raw)>52 else "")
+
+def _public_sweep(result):
+    public=dict(result or {})
+    public["matches"]=[
+        {
+            "personalIndex":match.get("personalIndex",0),
+            "shopifyIndex":match.get("shopifyIndex",0),
+            "score":match.get("score",0),
+            "exact":[_mask_token(token) for token in (match.get("exact") or [])],
+            "at":match.get("at") or _utc()
+        }
+        for match in (public.get("matches") or [])
+    ]
+    public["privacy"]="Public tracker response masks identity tokens and omits raw personal/shopify rows."
+    return public
+
 def run_sweep():
     personal=_read_table("personal_tracker_events")
     shopify_live=_fetch_shopify_orders()
@@ -201,13 +232,13 @@ def api_shopify_tracker():
 
 @engine.route("/api/global-sweep/run",methods=["GET","POST"])
 def api_global_sweep_run():
-    return jsonify(run_sweep())
+    return jsonify(_public_sweep(run_sweep()))
 
 @engine.route("/api/global-sweep/status",methods=["GET"])
 def api_global_sweep_status():
     latest=_latest_sweep()
     if not latest.get("lastRun"):
         latest=run_sweep()
-    return jsonify(latest)
+    return jsonify(_public_sweep(latest))
 
 start_global_sweep_scheduler()

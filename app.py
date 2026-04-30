@@ -25,12 +25,14 @@ from openai import OpenAI
 
 from engine_routes import engine
 from content_engine import trending_products, reorder_suggestions
+from backend.viral_engine import viral_engine_bp
 from backend.render_status import render_status_bp
 
 app = Flask(__name__, static_folder="static")
 app.secret_key = os.environ.get("FLASK_SECRET_KEY") or os.urandom(32)
 
 app.register_blueprint(engine)
+app.register_blueprint(viral_engine_bp)
 app.register_blueprint(render_status_bp)
 
 #################################################
@@ -2056,6 +2058,182 @@ def summarize_local_remote_traffic(window_minutes=5):
             "top_paths": [],
             "mode": "steady_state",
         }
+
+MARKET_READER_ENDPOINT = os.environ.get(
+    "MARKET_READER_ENDPOINT",
+    "https://market-do8p.onrender.com/api/options-dashboard",
+)
+
+
+def _path_intent_label(path):
+    text = (path or "").strip().lower()
+    if any(token in text for token in ["profile", "hair", "scan", "analysis"]):
+        return "Hair solution urgency"
+    if any(token in text for token in ["catalog", "product", "shop", "checkout"]):
+        return "Product buyer"
+    if any(token in text for token in ["studio", "jake", "record"]):
+        return "Studio creator"
+    if any(token in text for token in ["market", "globaltracker", "vip", "options"]):
+        return "Market/VIP interest"
+    if any(token in text for token in ["faq", "contact", "developer"]):
+        return "Staff question"
+    if any(token in text for token in ["map", "perk", "discount"]):
+        return "Perk explorer"
+    return "New visitor"
+
+
+def build_global_client_sweep():
+    now_iso = _local_remote_now()
+    windows = [5, 60, 1440]
+    traffic = [summarize_local_remote_traffic(minutes) for minutes in windows]
+    since_24h = (datetime.utcnow() - timedelta(hours=24)).isoformat() + "Z"
+    intent_counts = {}
+    top_paths = []
+    conversions = 0
+    lead_requests = 0
+    try:
+        conn = sqlite3.connect(CREDIT_DB_PATH)
+        cur = conn.cursor()
+        rows = cur.execute(
+            "SELECT path, COUNT(*) AS hits FROM local_remote_traffic_events WHERE created_at >= ? GROUP BY path ORDER BY hits DESC LIMIT 12",
+            (since_24h,),
+        ).fetchall() or []
+        for path_value, hits in rows:
+            label = _path_intent_label(path_value)
+            intent_counts[label] = intent_counts.get(label, 0) + int(hits or 0)
+            top_paths.append({"path": path_value or "/", "intent": label, "hits": int(hits or 0)})
+        conversions = int((cur.execute(
+            "SELECT COUNT(*) FROM local_remote_conversion_events WHERE created_at >= ?",
+            (since_24h,),
+        ).fetchone() or [0])[0] or 0)
+        lead_requests = int((cur.execute(
+            "SELECT COUNT(*) FROM lead_requests WHERE created_at >= ?",
+            (since_24h,),
+        ).fetchone() or [0])[0] or 0)
+        conn.close()
+    except:
+        top_paths = []
+        intent_counts = {}
+
+    lanes = [
+        {
+            "lane": "Hair scan rescue",
+            "target": "Visitors repeating Profile, hair analysis, FAQ, and Catalog",
+            "route": "Open Profile scan, ARIA help, product catalog, and human contact if urgency stays high.",
+            "cta": "Profile -> ARIA -> Catalog",
+            "score": min(100, 42 + intent_counts.get("Hair solution urgency", 0) * 8),
+        },
+        {
+            "lane": "Product buyer",
+            "target": "Visitors touching Catalog, Shopify, products, discounts, or perks",
+            "route": "Keep checkout path clear, show active discount/perk, and capture contact only when they choose support.",
+            "cta": "Catalog -> Shopify checkout",
+            "score": min(100, 38 + intent_counts.get("Product buyer", 0) * 8 + intent_counts.get("Perk explorer", 0) * 4),
+        },
+        {
+            "lane": "Studio creator",
+            "target": "People recording, testing Jake, or using Studio multiple times",
+            "route": "Route to Studio Jake tier, export workflow, FX help, and creator account continuity.",
+            "cta": "Studio -> Jake -> Studio tier",
+            "score": min(100, 34 + intent_counts.get("Studio creator", 0) * 10),
+        },
+        {
+            "lane": "Market VIP",
+            "target": "Confirmed accounts returning to Globaltracker, Market, VIP, or options views",
+            "route": "Show research-only market board, require account/payment confirmation before private VIP access.",
+            "cta": "Globaltracker -> VIP confirm",
+            "score": min(100, 30 + intent_counts.get("Market/VIP interest", 0) * 11),
+        },
+        {
+            "lane": "Staff question",
+            "target": "Visitors who need a person, contact form, developer feed, or product/order help",
+            "route": "Ask ARIA/Jake to invite a contact note, then escalate cleanly without public personal data.",
+            "cta": "FAQ -> Contact note",
+            "score": min(100, 35 + intent_counts.get("Staff question", 0) * 9),
+        },
+    ]
+
+    return {
+        "ok": True,
+        "updated_at": now_iso,
+        "privacy": "Public sweep masks IP addresses, personal addresses, contact info, and per-person revenue.",
+        "traffic": traffic,
+        "top_paths": top_paths,
+        "intent_counts": intent_counts,
+        "lead_requests_24h": lead_requests,
+        "conversions_24h": conversions,
+        "lanes": lanes,
+        "next_actions": [
+            "Keep the Global Tracker visible for visitors already in the app.",
+            "Route high-urgency hair visitors into Profile scan, ARIA, Catalog, then contact.",
+            "Route product/cart visitors into discount-aware Shopify checkout.",
+            "Route market users into research-only VIP confirmation before private reads.",
+        ],
+    }
+
+
+def fetch_globaltracker_night_options():
+    overnight_label = (
+        f"{(datetime.utcnow() - timedelta(days=1)).date().isoformat()} overnight "
+        f"to {datetime.utcnow().date().isoformat()}"
+    )
+    started = _local_remote_now()
+    try:
+        response = requests.get(
+            MARKET_READER_ENDPOINT,
+            params={"ticker": "SPY"},
+            timeout=28,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except Exception as exc:
+        return {
+            "ok": False,
+            "updated_at": started,
+            "label": overnight_label,
+            "source": MARKET_READER_ENDPOINT,
+            "error": str(exc)[:220],
+            "candidates": [],
+            "note": "Market reader could not be reached. No trades were executed.",
+        }
+
+    candidates = []
+    for index, item in enumerate((payload.get("topCandidates") or [])[:5], start=1):
+        score = round(float(item.get("score") or item.get("pressure") or 0), 1)
+        candidates.append({
+            "rank": index,
+            "symbol": str(item.get("ticker") or "").upper(),
+            "market": "SPY watch universe" if item.get("ticker") != "SPY" else "S&P 500",
+            "direction": item.get("direction") or "watch",
+            "pressure": round(float(item.get("pressure") or 0), 1),
+            "score": score,
+            "last_price": item.get("lastPrice"),
+            "route": item.get("timeframeLabel") or "scanner",
+            "state": item.get("topBottomState") or "scanning",
+            "target": item.get("topBottomTarget") or "watch",
+            "pattern": item.get("threeDayPattern") or "",
+            "projected_move": item.get("projectedUnderlyingMove"),
+        })
+
+    warnings = []
+    if payload.get("error"):
+        warnings.append(str(payload.get("error"))[:260])
+    order_flow_error = ((payload.get("orderFlow") or {}).get("loadError") or "").strip()
+    if order_flow_error:
+        warnings.append(order_flow_error[:260])
+
+    return {
+        "ok": True,
+        "updated_at": _local_remote_now(),
+        "label": overnight_label,
+        "source": MARKET_READER_ENDPOINT,
+        "ticker": payload.get("ticker") or "SPY",
+        "market_status": payload.get("marketStatus") or "",
+        "options_entitled": not any("not entitled" in warning.lower() or "not authorized" in warning.lower() for warning in warnings),
+        "warnings": warnings,
+        "candidates": candidates,
+        "note": "Research-only scan result from the Market reader. It does not execute trades or guarantee outcomes.",
+    }
 
 
 def list_local_remote_inbox_offers(owner_email, limit=8):
@@ -7414,6 +7592,14 @@ def remote_shell(section=None):
 @app.route("/globaltracker")
 def global_tracker_shell():
     return send_from_directory("static", "index.html")
+
+@app.route("/api/globaltracker/client-sweep")
+def api_globaltracker_client_sweep():
+    return jsonify(build_global_client_sweep())
+
+@app.route("/api/globaltracker/night-options")
+def api_globaltracker_night_options():
+    return jsonify(fetch_globaltracker_night_options())
 
 @app.route("/<route_tag>")
 def tagged_remote_shell(route_tag):
