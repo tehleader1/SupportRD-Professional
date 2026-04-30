@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, send_from_directory
 import requests
 import os
 
@@ -22,6 +22,11 @@ def _probe_primary_url():
             "status_code": 502,
             "error": str(exc)[:160],
         }
+
+
+@render_status_bp.route("/accounts/<tag>")
+def account_guest_channel(tag):
+    return send_from_directory("../static", "index.html")
 
 
 @render_status_bp.route("/api/status/render-health")
