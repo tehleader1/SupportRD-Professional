@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, send_from_directory
+from flask import Blueprint, jsonify, send_from_directory, current_app
 import requests
 import os
 
@@ -25,8 +25,9 @@ def _probe_primary_url():
 
 
 @render_status_bp.route("/accounts/<tag>")
+@render_status_bp.route("/accounts/<tag>/")
 def account_guest_channel(tag):
-    return send_from_directory("../static", "index.html")
+    return send_from_directory(current_app.static_folder, "index.html")
 
 
 @render_status_bp.route("/api/status/render-health")
