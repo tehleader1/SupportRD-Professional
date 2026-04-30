@@ -1,5 +1,5 @@
 (()=>{
-  const BUILD = 'backend-outreach-20260430a';
+  const BUILD = 'diary-backlink-video-20260430a';
   const modules = [
     '/static/rebuild/sr-app-state.js',
     '/static/rebuild/sr-account-backbone.js',
@@ -8,6 +8,7 @@
     '/static/rebuild/sr-global-tracker.js',
     '/static/rebuild/sr-global-sweep.js',
     '/static/rebuild/sr-functional-surfaces.js',
+    '/static/rebuild/sr-diary-backlink-video.js',
     '/static/rebuild/sr-studio-motherboard.js',
     '/static/rebuild/sr-voice-assistants.js',
     '/static/rebuild/sr-remote-glide.js'
