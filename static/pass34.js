@@ -1,15 +1,16 @@
 (()=>{
-  const BUILD = 'globaltracker-lock-20260430b';
+  const BUILD = 'support-rd-login-settings-20260501a';
   const modules = [
     '/static/rebuild/sr-app-state.js',
     '/static/rebuild/sr-account-backbone.js',
+    '/static/rebuild/sr-login-square.js',
+    '/static/rebuild/sr-account-intelligence-settings.js',
     '/static/rebuild/sr-commerce-rank.js',
     '/static/rebuild/sr-real-integrations.js',
     '/static/rebuild/sr-global-tracker.js',
     '/static/rebuild/sr-global-sweep.js',
     '/static/rebuild/sr-functional-surfaces.js',
     '/static/rebuild/sr-diary-backlink-video.js',
-    '/static/rebuild/sr-globaltracker-access-lock.js',
     '/static/rebuild/sr-studio-motherboard.js',
     '/static/rebuild/sr-voice-assistants.js',
     '/static/rebuild/sr-remote-glide.js'
@@ -48,17 +49,18 @@
   function boot(){
     const root = window.SupportRDRebuild || {};
     root.initAccountBackbone?.();
+    root.initLoginSquare?.();
+    root.initAccountIntelligenceSettings?.();
     root.initCommerceRank?.();
     root.initGlobalTracker?.();
     root.initGlobalSweep?.();
     root.initFunctionalSurfaces?.();
-    root.initGlobalTrackerAccessLock?.();
     root.initStudioMotherboard?.();
     root.initVoiceAssistants?.();
     root.initRemoteGlide?.();
     bindRemoteRoutes(root);
     const path = String(window.location.pathname || '').toLowerCase();
-    root.renderFunctionalPanel?.(path.includes('globaltracker') ? 'globaltracker' : 'diary');
+    root.renderFunctionalPanel?.(path.includes('settings') ? 'settings' : 'diary');
   }
 
   window.SupportRD34H = window.SupportRD34H || {};
