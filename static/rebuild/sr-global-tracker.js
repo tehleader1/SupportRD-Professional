@@ -266,7 +266,7 @@
           <h2>VIP market watch, website motion, plant delivery, and in-person order routing.</h2>
           <p>Research-only market routing, privacy-safe visitor cohorts, plant package layers, and payment/delivery intake in one visible company dashboard.</p>
           <div class="sr-global-actions">
-            <a class="sr-buy-btn" href="https://market-do8p.onrender.com/" target="_blank" rel="noopener">Open Market Reader</a>
+            <a class="sr-buy-btn" href="https://lasersmarket.com/" target="_blank" rel="noopener">Open Market Reader</a>
             <a class="sr-mini-btn" href="https://www.theplantmaninc.com/" target="_blank" rel="noopener">Open Plant Site</a>
             <button class="sr-mini-btn" type="button" data-global-action="vip-confirm">${state.vipConfirmed ? 'VIP Confirmed' : 'Confirm $25,000 VIP View'}</button>
           </div>

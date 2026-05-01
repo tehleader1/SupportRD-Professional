@@ -2,12 +2,13 @@
   const root = window.SupportRDRebuild = window.SupportRDRebuild || {};
   const KEY='srFaqReelLoungeV4';
   const FEEDS = [
-    ['salon','Hair Salon Style','Salon transformations, wash day, chair results'],
-    ['meme','Hair Meme Style','Funny hair moments, bad hair day energy'],
+    ['meme','Hair Memes Style','Funny hair moments, bad hair day energy'],
     ['professional','Professional Hair Style','Clean tutorials, pro finish, stylist education'],
-    ['random','Random Hair Style','Mixed discovery feed'],
+    ['home','Home Hair Style','Wash day, at-home care, simple daily styles'],
+    ['salon','Salon Hair Style','Salon transformations, wash day, chair results'],
     ['family','Family Hair Style','Family event hair, wedding prep, kid/family styling']
   ];
+  const LOCAL_CLIPS = ['/static/videos/reel-1.mp4','/static/videos/reel-2.mp4','/static/videos/reel-3.mp4','/static/videos/reel-4.mp4','/static/videos/reel-6.mp4','/static/videos/sample-10s.mp4'];
   let LIVE_REELS=[];
   let LAST_PROVIDER='loading';
   function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
@@ -17,15 +18,14 @@
   function current(){const s=read();return {category:s.category||'salon',index:s.index||0}}
   function feedLabel(cat){return (FEEDS.find(f=>f[0]===cat)||FEEDS[0])[1]}
   function reel(){const c=current();return LIVE_REELS[c.index % Math.max(1,LIVE_REELS.length)] || {}}
-  function reelUrl(){const r=reel();return r.clip || r.link || ''}
+  function reelUrl(){const r=reel();const url=r.clip||'';if(/\.(mp4|webm|ogg)(\?|$)/i.test(url))return url;const c=current();return LOCAL_CLIPS[c.index % LOCAL_CLIPS.length]}
   function allComments(){return read().topicComments || {}}
   function topicComments(cat=current().category){return (allComments()[cat]||[]).slice(0,100)}
   function css(){if(document.querySelector('#srFaqReelV4Css'))return;const s=document.createElement('style');s.id='srFaqReelV4Css';s.textContent=`
     .sr-faq-youtube{display:grid;grid-template-columns:minmax(320px,1fr) 410px;gap:1rem;align-items:start}.sr-reel-stage{border:1px solid rgba(255,255,255,.14);border-radius:1.3rem;background:#06101f;overflow:hidden;position:relative}.sr-reel-video{width:100%;aspect-ratio:9/16;max-height:660px;object-fit:cover;background:#020713;display:block}.sr-reel-overlay{position:absolute;left:0;right:0;bottom:0;padding:1rem;background:linear-gradient(to top,rgba(0,0,0,.85),transparent);pointer-events:none}.sr-reel-overlay h3{margin:0;font-size:1rem}.sr-reel-side{display:grid;gap:.8rem}.sr-reel-card{border:1px solid rgba(255,255,255,.14);border-radius:1rem;background:rgba(255,255,255,.055);padding:.85rem}.sr-big-feed-grid{display:grid;grid-template-columns:1fr;gap:.55rem}.sr-big-feed{border:1px solid rgba(255,255,255,.16);border-radius:1rem;background:linear-gradient(135deg,rgba(114,247,255,.12),rgba(255,255,255,.04));color:#fff;padding:.78rem;text-align:left;cursor:pointer}.sr-big-feed.active{border-color:#72f7ff;background:linear-gradient(135deg,rgba(114,247,255,.35),rgba(97,244,166,.12));box-shadow:0 0 24px rgba(114,247,255,.18)}.sr-big-feed strong{display:block;font-size:1rem}.sr-big-feed small{opacity:.72}.sr-reel-actions{display:flex;gap:.45rem;flex-wrap:wrap}.sr-reel-actions button,.sr-reel-card button{border:1px solid rgba(255,255,255,.16);border-radius:999px;background:rgba(255,255,255,.08);color:#fff;padding:.48rem .72rem;font-weight:900;cursor:pointer}.sr-reel-card button.sr-buy-btn{background:#72f7ff;color:#06101f}.sr-comment-stream{max-height:260px;overflow:auto;display:grid;gap:.45rem}.sr-comment-bubble{border:1px solid rgba(255,255,255,.12);border-radius:.85rem;background:rgba(0,0,0,.25);padding:.55rem}.sr-comment-bubble small{opacity:.65}.sr-reel-side input,.sr-reel-side textarea{width:100%;border:1px solid rgba(255,255,255,.16);border-radius:.7rem;background:rgba(0,0,0,.25);color:#fff;padding:.6rem}.sr-all-feed{display:grid;gap:.35rem;max-height:165px;overflow:auto}.sr-all-feed-row{font-size:.84rem;border-left:3px solid #72f7ff;padding:.35rem .5rem;background:rgba(255,255,255,.04)}.sr-provider-pill{display:inline-block;border:1px solid rgba(255,255,255,.16);border-radius:999px;padding:.25rem .55rem;font-size:.75rem;opacity:.82}.sr-pro-analysis{white-space:pre-wrap;line-height:1.45;color:rgba(255,255,255,.82)}@media(max-width:900px){.sr-faq-youtube{grid-template-columns:1fr}.sr-reel-video{max-height:540px}}
   `;document.head.appendChild(s)}
   async function fetchReels(category){
-    const apiCat=category==='family'?'salon':category;
-    const res=await fetch(`/api/faq/reels?category=${encodeURIComponent(apiCat)}&style=${encodeURIComponent(category)}&ts=${Date.now()}`);
+    const res=await fetch(`/api/faq/reels?category=${encodeURIComponent(category)}&style=${encodeURIComponent(category)}&ts=${Date.now()}`);
     const data=await res.json();
     LAST_PROVIDER=data.provider||'unknown provider';
     return data.items||[];

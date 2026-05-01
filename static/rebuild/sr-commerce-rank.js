@@ -217,7 +217,7 @@
       {id:'lacceador-crece', title:'Lacceador Crece', price:'Shop', img:ASSETS.lacceador, desc:'Styling and elasticity support.', href:'https://shop.supportrd.com/products/lacceador-crece', buy:'Buy'},
       {id:'shampoo', title:'Shampoo', price:'Shop', img:ASSETS.shampoo, desc:'Daily wash lane.', href:'https://shop.supportrd.com/products/shampoo', buy:'Buy'},
       {id:'mask', title:'Mascarilla', price:'Shop', img:ASSETS.mask, desc:'Conditioning mask lane.', href:'https://shop.supportrd.com/products/mascarilla', buy:'Buy'},
-      {id:'market-laser', title:'Market Laser', price:'Live', img:ASSETS.artists, desc:'Open SupportRD market reader.', href:'https://market-do8p.onrender.com/', buy:'Open'}
+      {id:'market-laser', title:'Market Laser', price:'Live', img:ASSETS.artists, desc:'Open SupportRD market reader.', href:'https://lasersmarket.com/', buy:'Open'}
     ];
     if (side) side.innerHTML = sideItems.map(p=>`
       <article class="sr-side-ad" data-ad-id="${p.id}">

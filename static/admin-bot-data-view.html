@@ -23,7 +23,7 @@
     <p>This combines the exact-match sweep, client finder, FAQ viral opportunities, outreach engine, and Market Bot options radar. Market data is research only, not financial advice or automatic trading.</p>
     <input id="token" placeholder="Paste OUTREACH_ADMIN_TOKEN">
     <button id="save">Save token</button><button id="tick">Run bot tick</button><button id="refresh" class="ghost">Refresh</button>
-    <a class="btn ghost" href="https://market-do8p.onrender.com/" target="_blank">Open Market App</a>
+    <a class="btn ghost" href="https://lasersmarket.com/" target="_blank">Open Market App</a>
   </section>
   <section id="summary" class="grid"></section>
   <section id="market" class="grid"></section>
@@ -34,7 +34,7 @@
 <script>
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-const MARKET='https://market-do8p.onrender.com';
+const MARKET='https://lasersmarket.com';
 const WATCH=['SPY','QQQ','IWM','AMD','NVDA','AAPL','TSLA','PLTR','SOFI','HOOD','COIN','RBLX','SHOP','UBER','DKNG'];
 function token(){return $('#token').value || localStorage.getItem('srOutreachToken') || new URLSearchParams(location.search).get('token') || ''}
 function qs(){const t=token();return t?'?token='+encodeURIComponent(t):''}
@@ -67,7 +67,7 @@ async function loadMarket(){
  let rows=[];
  try{rows=(await Promise.all(WATCH.map(fetchDashboard))).filter(Boolean).filter(x=>x.under200).sort((a,b)=>(b.score||0)-(a.score||0)).slice(0,10)}catch(e){rows=[]}
  if(!rows.length){rows=[{ticker:'Market API',direction:'watch',price:'',score:'',reason:'Waiting for Market dashboard API /api/options-dashboard?ticker=SPY. Deploy Market with POLYGON_API_KEY and ensure browser CORS allows this dashboard.'},{ticker:'Rule',direction:'bullish/bearish',price:'under $200',score:'volume + pressure',reason:'Bot lane is ready to rank dashboard-derived volume/pressure candidates.'}]}
- $('#market').innerHTML='<article class="card wide market"><h2>Market Bot / Options Radar</h2><p>Research-only top 10 lane. It pulls your Market dashboard API, filters under $200 where possible, and ranks by pressure/volume/candle/chain behavior. Not financial advice.</p><a class="btn" href="https://market-do8p.onrender.com/" target="_blank">Open Market App</a></article>'+rows.map(x=>card(esc(x.ticker),`<p><span class="pill ${String(x.direction).toLowerCase().includes('bear')?'bear':'hot'}">${esc(x.direction)}</span><span class="pill">price ${esc(x.price||'n/a')}</span><span class="pill">score ${esc(x.score||'n/a')}</span></p><pre>${esc(x.reason)}</pre>${x.contract?`<p><span class="pill">${esc(x.contract)}</span></p>`:''}`,'market')).join('');
+ $('#market').innerHTML='<article class="card wide market"><h2>Market Bot / Options Radar</h2><p>Research-only top 10 lane. It pulls your Market dashboard API, filters under $200 where possible, and ranks by pressure/volume/candle/chain behavior. Not financial advice.</p><a class="btn" href="https://lasersmarket.com/" target="_blank">Open Market App</a></article>'+rows.map(x=>card(esc(x.ticker),`<p><span class="pill ${String(x.direction).toLowerCase().includes('bear')?'bear':'hot'}">${esc(x.direction)}</span><span class="pill">price ${esc(x.price||'n/a')}</span><span class="pill">score ${esc(x.score||'n/a')}</span></p><pre>${esc(x.reason)}</pre>${x.contract?`<p><span class="pill">${esc(x.contract)}</span></p>`:''}`,'market')).join('');
  return rows;
 }
 async function load(){

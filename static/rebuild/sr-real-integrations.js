@@ -1160,7 +1160,7 @@
      9. MARKET LASER — LINKED ACCOUNT + PAID SIGNALS
   ───────────────────────────────────────────── */
   const MARKET_LASER = {
-    MARKET_URL: 'https://market-do8p.onrender.com/',
+    MARKET_URL: 'https://lasersmarket.com/',
 
     link(email, paid) {
       root.linkMarketAccount?.(email, paid);

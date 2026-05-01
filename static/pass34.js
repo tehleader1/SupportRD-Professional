@@ -1,5 +1,5 @@
 (()=>{
-  const BUILD = 'support-rd-clean-20260501d';
+  const BUILD = 'support-rd-clean-20260501l';
   const modules = [
     '/static/rebuild/sr-runtime-clean-start.js',
     '/static/rebuild/sr-app-state.js',
@@ -42,8 +42,20 @@
     root.initStudioMotherboard?.();
     root.initVoiceAssistants?.();
     root.initRemoteGlide?.();
+    root.initDiaryBacklinkVideo?.();
     const path = String(window.location.pathname || '').toLowerCase();
-    root.renderFunctionalPanel?.(path.includes('settings') ? 'settings' : 'diary');
+    const route =
+      path.includes('globaltracker') ? 'globaltracker' :
+      path.includes('settings') ? 'settings' :
+      path.includes('studio') ? 'studio' :
+      path.includes('profile') ? 'profile' :
+      path.includes('faq') ? 'faq' :
+      path.includes('map') ? 'map' :
+      path.includes('market') ? 'market' :
+      path.includes('catalog') || path.includes('products') ? 'catalog' :
+      'diary';
+    root.renderFunctionalPanel?.(route);
+    setTimeout(()=>root.initDiaryBacklinkVideo?.(), 80);
   }
 
   modules.reduce((chain, src)=>chain.then(()=>load(src)), Promise.resolve())

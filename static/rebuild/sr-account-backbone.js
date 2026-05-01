@@ -9,7 +9,7 @@
     confirmed: true,
     market: {
       linked: false,
-      url: 'https://market-do8p.onrender.com/',
+      url: 'https://lasersmarket.com/',
       tier: 'Live Signals',
       price: 25000,
       paid: false,
@@ -133,7 +133,7 @@
       paid: !!paid,
       tier: 'Live Signals',
       price: 25000,
-      url: 'https://market-do8p.onrender.com/',
+      url: 'https://lasersmarket.com/',
       at: new Date().toISOString()
     };
     return write(account);

@@ -43,10 +43,20 @@ app.register_blueprint(render_status_bp)
 
 OPENAI_KEY = os.environ.get("OPENAI_API_KEY")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+VOICE_AI_PROVIDER = (os.environ.get("VOICE_AI_PROVIDER") or "local").strip().lower()
+ARIA_AI_PROVIDER = (os.environ.get("ARIA_AI_PROVIDER") or VOICE_AI_PROVIDER).strip().lower()
 
 client = None
 if OPENAI_KEY:
     client = OpenAI(api_key=OPENAI_KEY)
+
+VOICE_OPENAI_PROVIDERS = {"openai", "openai_chat", "openai_voice", "paid_openai"}
+
+def voice_openai_enabled():
+    return bool(OPENAI_KEY and client and VOICE_AI_PROVIDER in VOICE_OPENAI_PROVIDERS)
+
+def aria_openai_enabled():
+    return bool(OPENAI_KEY and client and ARIA_AI_PROVIDER in VOICE_OPENAI_PROVIDERS)
 
 SHOPIFY_STORE = os.environ.get("SHOPIFY_STORE", "")
 SHOPIFY_TOKEN = os.environ.get("SHOPIFY_STOREFRONT_TOKEN", "")
@@ -320,6 +330,8 @@ MAJOR_BANKS = [
     "Ally Bank",
 ]
 TTS_ALLOWED_VOICES = {"alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer"}
+DIARY_LIVE_EVENTS = {}
+DIARY_ACCOUNT_COMMENTS = {}
 PROHIBITED_TERMS = ["drug", "drugs", "cocaine", "meth", "weed", "marijuana", "heroin", "fentanyl", "gang", "gangs", "cartel", "ms-13", "crip", "bloods"]
 COMPETITION_BLOCKED_TOKENS = ["porn", "pornography", "xxx", "sex", "nsfw", "adultvideo"]
 TRADE_BOT_FUNCTIONS = {
@@ -2063,7 +2075,7 @@ def summarize_local_remote_traffic(window_minutes=5):
 
 MARKET_READER_ENDPOINT = os.environ.get(
     "MARKET_READER_ENDPOINT",
-    "https://market-do8p.onrender.com/api/options-dashboard",
+    "https://lasersmarket.com/api/options-dashboard",
 )
 
 
@@ -2472,6 +2484,11 @@ def build_diary_live_slug(owner_email, payload=None):
     seed = seed.replace("^", " ")
     slug = re.sub(r"[^a-z0-9]+", "-", seed).strip("-") or "supportrd-live"
     return slug[:60]
+
+
+def normalize_public_account_tag(value):
+    tag = re.sub(r"[^a-zA-Z0-9_-]+", "", (value or "")).upper()
+    return (tag or "DYGENRJE")[:80]
 
 
 def normalize_diary_profile_tag(raw_tag):
@@ -6300,7 +6317,10 @@ def voice_session_bootstrap():
         "profile": profile,
         "greeting": greeting,
         "intro_copy": intro_copy,
-        "realtime_ready": bool(OPENAI_KEY),
+        "voice_cost_mode": VOICE_AI_PROVIDER,
+        "voice_provider": "openai" if voice_openai_enabled() else "local_budget",
+        "browser_speech_ready": True,
+        "realtime_ready": voice_openai_enabled(),
         "realtime_path": "/api/voice/realtime/session",
         "history": get_recent_voice_turns(session_id, limit=6),
     }
@@ -6308,8 +6328,13 @@ def voice_session_bootstrap():
 
 @app.route("/api/voice/realtime/session", methods=["POST"])
 def voice_realtime_session():
-    if not OPENAI_KEY:
-        return {"ok": False, "error": "openai_key_missing"}, 503
+    if not voice_openai_enabled():
+        return {
+            "ok": False,
+            "error": "paid_voice_disabled",
+            "voice_cost_mode": VOICE_AI_PROVIDER,
+            "fallback": "browser_speech",
+        }, 503
     body = request.json if request.is_json else {}
     assistant_id = normalize_voice_assistant(body.get("assistant_id"))
     requested_mode = normalize_voice_mode(body.get("mode") or "greeting")
@@ -6383,6 +6408,9 @@ def voice_respond():
             "mode": mode,
             "reply": reply,
             "understood": False,
+            "provider": "local_budget",
+            "voice_cost_mode": VOICE_AI_PROVIDER,
+            "paid_voice_enabled": voice_openai_enabled(),
             "profile": get_voice_profile_for(assistant_id, membership_tier),
         }
     product_lane_key = pick_voice_product_lane(message)
@@ -6390,11 +6418,12 @@ def voice_respond():
     understood = voice_topic_understood(message, assistant_id)
     profile = get_voice_profile_for(assistant_id, membership_tier)
     history = get_recent_voice_turns(session_id, limit=8)
+    provider = "local_budget"
     if not understood:
         reply = build_voice_fallback_reply(message, assistant_id, mode, membership_tier, memory_notes)
     else:
         reply = ""
-        if client:
+        if voice_openai_enabled():
             try:
                 history_summary = " | ".join(
                     f"{turn.get('speaker','user')}: {str(turn.get('text',''))[:180]}"
@@ -6423,6 +6452,8 @@ def voice_respond():
                     max_tokens=250
                 )
                 reply = (response.choices[0].message.content or "").strip()
+                if reply:
+                    provider = "openai"
             except Exception:
                 reply = ""
         if not reply:
@@ -6445,6 +6476,8 @@ def voice_respond():
             "family_memory": memory_notes,
             "product_lane_key": product_lane_key,
             "product_lane": product_lane,
+            "voice_provider": provider,
+            "voice_cost_mode": VOICE_AI_PROVIDER,
             "last_reply": reply,
             "last_message": message,
             "updated_at": _studio_now(),
@@ -6457,6 +6490,9 @@ def voice_respond():
         "mode": mode,
         "reply": reply,
         "understood": understood,
+        "provider": provider,
+        "voice_cost_mode": VOICE_AI_PROVIDER,
+        "paid_voice_enabled": voice_openai_enabled(),
         "product_lane": product_lane,
         "profile": profile,
         "history": get_recent_voice_turns(session_id, limit=8),
@@ -6603,6 +6639,77 @@ def diary_public_session():
     }
 
 
+@app.route("/api/diary/account-feed")
+def diary_account_feed():
+    tag = normalize_public_account_tag(request.args.get("tag"))
+    comments = DIARY_ACCOUNT_COMMENTS.get(tag, [])[-40:]
+    return {
+        "ok": True,
+        "tag": tag,
+        "event": DIARY_LIVE_EVENTS.get(tag),
+        "comments": comments,
+    }
+
+
+@app.route("/api/diary/account-comment", methods=["POST"])
+def diary_account_comment():
+    body = request.json if request.is_json else {}
+    tag = normalize_public_account_tag(body.get("tag"))
+    comment_text = (body.get("comment_text") or "").strip()
+    if not comment_text:
+        return {"ok": False, "error": "comment_required"}, 400
+    comment_kind = (body.get("comment_kind") or "comment").strip().lower()[:40]
+    amount_label = (body.get("amount_label") or "").strip()[:40]
+    comment = {
+        "author_name": (body.get("author_name") or "Guest").strip()[:80] or "Guest",
+        "comment_text": comment_text[:500],
+        "comment_kind": comment_kind,
+        "amount_label": amount_label,
+        "created_at": _studio_now(),
+    }
+    comments = DIARY_ACCOUNT_COMMENTS.setdefault(tag, [])
+    comments.append(comment)
+    DIARY_ACCOUNT_COMMENTS[tag] = comments[-80:]
+    return {
+        "ok": True,
+        "tag": tag,
+        "comments": DIARY_ACCOUNT_COMMENTS[tag][-40:],
+    }
+
+
+@app.route("/api/diary/live-event", methods=["POST"])
+def diary_live_event():
+    body = request.json if request.is_json else {}
+    tag = normalize_public_account_tag(body.get("tag"))
+    event_type = (body.get("event_type") or "confetti").strip().lower()[:40]
+    label = (body.get("label") or event_type).strip()[:80]
+    aria_line = (body.get("aria_line") or "Aria says premium sound good to go.").strip()[:160]
+    event = {
+        "id": uuid.uuid4().hex,
+        "tag": tag,
+        "event_type": event_type,
+        "label": label,
+        "aria_line": aria_line,
+        "created_at": _studio_now(),
+    }
+    DIARY_LIVE_EVENTS[tag] = event
+    comments = DIARY_ACCOUNT_COMMENTS.setdefault(tag, [])
+    comments.append({
+        "author_name": "Streamer",
+        "comment_text": label,
+        "comment_kind": "celebration",
+        "amount_label": event_type,
+        "created_at": event["created_at"],
+    })
+    DIARY_ACCOUNT_COMMENTS[tag] = comments[-80:]
+    return {
+        "ok": True,
+        "tag": tag,
+        "event": event,
+        "comments": DIARY_ACCOUNT_COMMENTS[tag][-40:],
+    }
+
+
 @app.route("/api/diary/comment", methods=["POST"])
 def diary_comment():
     body = request.json if request.is_json else {}
@@ -6649,9 +6756,6 @@ def is_hair_topic(text):
 @app.route("/api/aria", methods=["POST"])
 def aria():
 
-    if not client:
-        return {"reply": "AI unavailable"}
-
     body = request.json if request.is_json else {}
     msg = body.get("message")
     membership_tier = (body.get("membership_tier") or "free").strip().lower()
@@ -6667,6 +6771,14 @@ def aria():
         return {"reply": "I can’t help with drugs or gang-related content. I can help with healthy hair routines and products."}
     if not is_hair_topic(msg):
         return {"reply": "I can only help with hair and scalp care. Tell me your hair concern and I’ll help."}
+    if not aria_openai_enabled():
+        mode = infer_voice_mode(msg, "greeting")
+        return {
+            "reply": build_voice_fallback_reply(msg, "aria", mode, membership_tier, []),
+            "provider": "local_budget",
+            "ai_cost_mode": ARIA_AI_PROVIDER,
+            "paid_ai_enabled": aria_openai_enabled(),
+        }
 
     try:
 
@@ -6777,9 +6889,13 @@ def aria_transcribe_ping():
 @app.route("/api/aria/transcribe", methods=["POST"])
 def aria_transcribe():
 
-    if not OPENAI_KEY:
-        app.logger.error("ARIA transcribe failed: OPENAI_API_KEY missing")
-        return {"error": "OPENAI_API_KEY missing"}, 500
+    if not voice_openai_enabled():
+        app.logger.info("ARIA transcribe skipped: free local voice mode is active")
+        return {
+            "error": "paid_transcribe_disabled",
+            "fallback": "browser_speech_recognition",
+            "voice_cost_mode": VOICE_AI_PROVIDER,
+        }, 503
 
     audio = request.files.get("audio")
     if not audio:
@@ -6832,8 +6948,12 @@ def aria_transcribe():
 @app.route("/api/aria/speech", methods=["POST"])
 def aria_speech():
 
-    if not OPENAI_KEY:
-        return {"error": "AI unavailable"}, 503
+    if not voice_openai_enabled():
+        return {
+            "error": "paid_voice_disabled",
+            "fallback": "browser_speech",
+            "voice_cost_mode": VOICE_AI_PROVIDER,
+        }, 503
 
     body = request.json if request.is_json else {}
     text = body.get("text", "") if isinstance(body, dict) else ""
@@ -7710,6 +7830,10 @@ def remote_shell(section=None):
 def global_tracker_shell():
     return send_from_directory("static", "index.html")
 
+@app.route("/accounts/<account_tag>")
+def public_account_diary_shell(account_tag):
+    return send_from_directory("static", "index.html")
+
 @app.route("/api/globaltracker/client-sweep")
 def api_globaltracker_client_sweep():
     return jsonify(build_global_client_sweep())
@@ -8015,7 +8139,7 @@ def local_remote_bootstrap():
             {
                 "key": "options",
                 "label": "Market",
-                "url": "https://market-do8p.onrender.com/",
+                "url": "https://lasersmarket.com/",
                 "kind": "website",
             },
             {
@@ -8082,7 +8206,7 @@ def local_remote_bootstrap():
                 "title": "Developer Coding Access",
                 "image": "/static/images/remote-healthy-hair.jpeg",
                 "detail": "Anthony founder access: coding the shell, options market board, corporate live viewer, and real platform wiring.",
-                "link": "https://market-do8p.onrender.com/",
+                "link": "https://lasersmarket.com/",
             },
         ],
     }

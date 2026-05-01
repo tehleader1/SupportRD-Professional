@@ -14,6 +14,8 @@ FAQ_REEL_QUERIES = {
     "salon": "hair salon transformation short video healthy hair",
     "meme": "funny hair meme short video bad hair day",
     "professional": "professional hairstyle tips short video hair care",
+    "home": "home hairstyle wash day natural hair care short video",
+    "family": "family hairstyle event prep kids natural hair short video",
     "random": "hair care short video healthy hairstyle funny professional",
 }
 
@@ -43,10 +45,12 @@ def _safe_reel_category(value):
 
 def _fallback_reels(category):
     local = {
-        "salon": ["/static/videos/hair-clip-1.mp4", "/static/videos/hair-clip-2.mp4"],
-        "meme": ["/static/videos/hair-meme-1.mp4", "/static/videos/hair-meme-2.mp4"],
-        "professional": ["/static/videos/pro-hair-1.mp4", "/static/videos/pro-hair-2.mp4"],
-        "random": ["/static/videos/hair-clip-3.mp4", "/static/videos/hair-meme-1.mp4", "/static/videos/pro-hair-1.mp4"],
+        "salon": ["/static/videos/reel-1.mp4", "/static/videos/reel-2.mp4"],
+        "meme": ["/static/videos/reel-3.mp4", "/static/videos/reel-4.mp4"],
+        "professional": ["/static/videos/reel-6.mp4", "/static/videos/sample-10s.mp4"],
+        "home": ["/static/videos/sample-10s.mp4", "/static/videos/reel-1.mp4"],
+        "family": ["/static/videos/reel-2.mp4", "/static/videos/reel-6.mp4"],
+        "random": ["/static/videos/reel-4.mp4", "/static/videos/sample-10s.mp4"],
     }
     return [
         {

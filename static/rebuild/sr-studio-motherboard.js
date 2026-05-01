@@ -1,7 +1,7 @@
 (function(){
   const root = window.SupportRDRebuild = window.SupportRDRebuild || {};
   const STORE_KEY = 'srStudioMotherboardV41';
-  const LANE_COUNT = 6;
+  const LANE_COUNT = 4;
   const PALETTE = ['#46a8ff', '#71f7c8', '#f6d15f', '#ff7ba8', '#b78cff', '#ff9f52'];
   const FX_LIST = [
     { id:'normalize', tier:'free', name:'Normalize', note:'Audacity-style loudness leveling before export.' },
@@ -46,7 +46,8 @@
     audioCtx: null,
     liveClip: null,
     raf: 0,
-    playing: []
+    playing: [],
+    undo: []
   };
 
   function esc(value){
@@ -82,6 +83,47 @@
       seeded: studio.seeded
     };
     try { localStorage.setItem(STORE_KEY, JSON.stringify(payload)); } catch {}
+  }
+
+  function snapshot(){
+    try {
+      studio.undo.unshift(JSON.stringify({
+        lanes: studio.lanes,
+        selectedLane: studio.selectedLane,
+        selectedClip: studio.selectedClip
+      }));
+      studio.undo = studio.undo.slice(0, 20);
+    } catch {}
+  }
+
+  function restoreUndo(){
+    const raw = studio.undo.shift();
+    if (!raw) return alert('Nothing to undo yet.');
+    try {
+      const saved = JSON.parse(raw);
+      studio.lanes = saved.lanes.map((lane, index)=>({
+        id: lane.id || `lane-${index + 1}`,
+        name: lane.name || `Lane ${index + 1} Audio Recording`,
+        clips: Array.isArray(lane.clips) ? lane.clips.map(clip=>({
+          ...clip,
+          peaks: Array.isArray(clip.peaks) ? clip.peaks : makePeaks(index + 1),
+          fxStack: Array.isArray(clip.fxStack) ? clip.fxStack : []
+        })) : []
+      }));
+      while (studio.lanes.length < LANE_COUNT) {
+        const index = studio.lanes.length;
+        studio.lanes.push({ id:`lane-${index + 1}`, name:`Lane ${index + 1} Audio Recording`, clips:[] });
+      }
+      studio.lanes = studio.lanes.slice(0, LANE_COUNT);
+      studio.selectedLane = Math.max(0, Math.min(LANE_COUNT - 1, Number(saved.selectedLane || 0)));
+      studio.selectedClip = Math.max(0, Number(saved.selectedClip || 0));
+      persist();
+      renderLanes();
+      syncPanelLabels();
+      recordAccount('studio-undo');
+    } catch {
+      alert('Undo snapshot could not be restored.');
+    }
   }
 
   function restoreSaved(){
@@ -228,8 +270,8 @@
         <header class="sr-studio-board__head">
           <div>
             <span>Studio Jake Motherboard</span>
-            <h2>Record, import, highlight, FX, and play all lanes.</h2>
-            <p>Choose a lane, record vocals or room sound, import MP3/M4A/WAV, add generated instrument sound visuals, highlight clips in blue, then apply free or paid FX.</p>
+            <h2>Four stacked motherboards with real lane controls.</h2>
+            <p>Choose a lane, record vocals or room sound, import MP3/M4A/WAV, add generated instrument sound visuals, highlight clips in blue, move or cut the clip, then apply free or paid FX.</p>
           </div>
           <div class="sr-studio-board__meters">
             <strong id="srStudioSelectedLabel">Lane 1 Audio Recording</strong>
@@ -242,14 +284,17 @@
             <input id="srStudioFileInput" type="file" accept="audio/*,.mp3,.m4a,.wav,.webm,.ogg" multiple>
             <span>Import MP3 / M4A / WAV</span>
           </label>
-          <button class="sr-buy-btn" type="button" data-studio-record>Record Selected Lane</button>
+          <button class="sr-mini-btn" type="button" data-studio-rewind>Rewind</button>
+          <button class="sr-mini-btn" type="button" data-studio-undo>Undo</button>
+          <button class="sr-buy-btn" type="button" data-studio-play-selected>Play</button>
+          <button class="sr-mini-btn" type="button" data-studio-stop-all>Stop</button>
+          <button class="sr-buy-btn" type="button" data-studio-record>Record</button>
           <button class="sr-mini-btn" type="button" data-studio-stop-record>Stop Record</button>
+          <button class="sr-mini-btn" type="button" data-studio-forward>Forward</button>
+          <button class="sr-mini-btn" type="button" data-studio-fastforward>Fastforward</button>
           <button class="sr-mini-btn" type="button" data-studio-add-instrument>Add Instrument Visual</button>
-          <button class="sr-buy-btn" type="button" data-studio-play-selected>Play Selected Clip</button>
           <button class="sr-mini-btn" type="button" data-studio-play-lane>Play Selected Lane</button>
           <button class="sr-buy-btn" type="button" data-studio-play-all>Play All Motherboards</button>
-          <button class="sr-mini-btn" type="button" data-studio-stop-all>Stop All</button>
-          <button class="sr-mini-btn" type="button" data-studio-rewind>Rewind</button>
         </div>
 
         <div class="sr-studio-layout">
@@ -268,7 +313,10 @@
             <label>FX strength</label>
             <input id="srStudioFxStrength" type="range" min="0" max="100" value="58">
             <button class="sr-buy-btn" type="button" data-studio-apply-fx>Apply FX To Blue Highlight</button>
+            <button class="sr-mini-btn" type="button" data-studio-cut-highlight>Cut Highlight To New Clip</button>
             <button class="sr-mini-btn" type="button" data-studio-trim-highlight>Trim Visual To Highlight</button>
+            <button class="sr-mini-btn" type="button" data-studio-move-left>Move Clip Left</button>
+            <button class="sr-mini-btn" type="button" data-studio-move-right>Move Clip Right</button>
             <button class="sr-mini-btn" type="button" data-studio-delete-clip>Delete Selected Clip</button>
             <button class="sr-buy-btn" type="button" data-studio-export>Export Motherboard Manifest</button>
             <div class="sr-output-box" id="srStudioFxStack">Select a clip to see FX history.</div>
@@ -386,6 +434,7 @@
 
   async function importFiles(files){
     const lane = selectedLane();
+    snapshot();
     for (const file of Array.from(files || [])) {
       const decoded = await peaksFromAudioFile(file);
       const clip = newClip({
@@ -407,6 +456,7 @@
 
   function addInstrument(){
     const lane = selectedLane();
+    snapshot();
     const instrumentNames = ['Synth Keys', 'Island Pluck', '808 Pulse', 'Warm Pad', 'Hi Hat Texture', 'Bass Motif'];
     const name = `${instrumentNames[(lane.clips.length + studio.selectedLane) % instrumentNames.length]} ${Date.now().toString().slice(-4)}`;
     const clip = newClip({
@@ -427,6 +477,7 @@
   async function startRecording(){
     if (studio.recorder?.state === 'recording') return;
     try {
+      snapshot();
       const ctx = ensureAudioContext();
       studio.stream = await navigator.mediaDevices.getUserMedia({ audio:true });
       const source = ctx.createMediaStreamSource(studio.stream);
@@ -565,6 +616,7 @@
   function applyFx(){
     const clip = selectedClip();
     if (!clip) return alert('Select a clip first.');
+    snapshot();
     const fxId = document.querySelector('#srStudioFxSelect')?.value || 'normalize';
     const fx = FX_LIST.find(item=>item.id === fxId) || FX_LIST[0];
     const strength = Number(document.querySelector('#srStudioFxStrength')?.value || 58);
@@ -586,6 +638,7 @@
   function trimHighlight(){
     const clip = selectedClip();
     if (!clip) return alert('Select a clip first.');
+    snapshot();
     const start = Math.min(Number(document.querySelector('#srStudioHighlightStart')?.value || 0), Number(document.querySelector('#srStudioHighlightEnd')?.value || 100));
     const end = Math.max(Number(document.querySelector('#srStudioHighlightStart')?.value || 0), Number(document.querySelector('#srStudioHighlightEnd')?.value || 100));
     const from = Math.floor((start / 100) * clip.peaks.length);
@@ -601,10 +654,62 @@
     recordAccount('studio-trim-highlight', { lane:selectedLane()?.name, file:clip.name, start, end });
   }
 
+  function cutHighlight(){
+    const lane = selectedLane();
+    const clip = selectedClip();
+    if (!lane || !clip) return alert('Select a clip first.');
+    snapshot();
+    const start = Math.min(Number(document.querySelector('#srStudioHighlightStart')?.value || 0), Number(document.querySelector('#srStudioHighlightEnd')?.value || 100));
+    const end = Math.max(Number(document.querySelector('#srStudioHighlightStart')?.value || 0), Number(document.querySelector('#srStudioHighlightEnd')?.value || 100));
+    const from = Math.floor((start / 100) * (clip.peaks || []).length);
+    const to = Math.max(from + 1, Math.floor((end / 100) * (clip.peaks || []).length));
+    const cut = {
+      ...clip,
+      id: `cut-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      name: `${clip.name} cut ${start}-${end}`,
+      peaks: (clip.peaks || []).slice(from, to),
+      position: Math.min(88, (clip.position || 0) + Math.max(4, ((end - start) / 100) * (clip.width || 24)) + 2),
+      width: Math.max(8, ((end - start) / 100) * (clip.width || 24)),
+      highlightStart: 0,
+      highlightEnd: 100,
+      fxStack: [
+        ...(clip.fxStack || []),
+        { id:'cut', name:'Blue Highlight Cut', tier:'free', strength:100, start, end, at:new Date().toISOString() }
+      ]
+    };
+    lane.clips.splice(studio.selectedClip + 1, 0, cut);
+    studio.selectedClip = studio.selectedClip + 1;
+    persist();
+    renderLanes();
+    syncPanelLabels();
+    recordAccount('studio-cut-highlight', { lane:lane.name, file:clip.name, start, end });
+  }
+
+  function moveClip(delta){
+    const clip = selectedClip();
+    if (!clip) return alert('Select a clip first.');
+    snapshot();
+    clip.position = Math.max(0, Math.min(92, Number(clip.position || 0) + delta));
+    persist();
+    renderLanes();
+    syncPanelLabels();
+    recordAccount('studio-move-clip', { lane:selectedLane()?.name, file:clip.name, position:clip.position });
+  }
+
+  function forward(amount = 5){
+    const clip = selectedClip();
+    if (clip) {
+      moveClip(amount);
+      return;
+    }
+    recordAccount('studio-forward', { amount });
+  }
+
   function deleteClip(){
     const lane = selectedLane();
     const clip = selectedClip();
     if (!lane || !clip) return;
+    snapshot();
     lane.clips.splice(studio.selectedClip, 1);
     studio.selectedClip = Math.max(0, Math.min(studio.selectedClip, lane.clips.length - 1));
     persist();
@@ -691,8 +796,14 @@
       if (event.target.closest?.('[data-studio-play-all]')) playAll();
       if (event.target.closest?.('[data-studio-stop-all]')) stopAll();
       if (event.target.closest?.('[data-studio-rewind]')) rewind();
+      if (event.target.closest?.('[data-studio-undo]')) restoreUndo();
+      if (event.target.closest?.('[data-studio-forward]')) forward(5);
+      if (event.target.closest?.('[data-studio-fastforward]')) forward(12);
       if (event.target.closest?.('[data-studio-apply-fx]')) applyFx();
+      if (event.target.closest?.('[data-studio-cut-highlight]')) cutHighlight();
       if (event.target.closest?.('[data-studio-trim-highlight]')) trimHighlight();
+      if (event.target.closest?.('[data-studio-move-left]')) moveClip(-5);
+      if (event.target.closest?.('[data-studio-move-right]')) moveClip(5);
       if (event.target.closest?.('[data-studio-delete-clip]')) deleteClip();
       if (event.target.closest?.('[data-studio-export]')) exportManifest();
     });

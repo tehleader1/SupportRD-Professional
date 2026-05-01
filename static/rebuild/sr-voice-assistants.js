@@ -9,6 +9,8 @@
     status: 'idle',
     transcript: '',
     reply: '',
+    provider: 'local_budget',
+    voiceName: '',
     lastStartedAt: '',
     history: []
   };
@@ -17,6 +19,31 @@
   let silenceTimer = null;
   let active = false;
   let finalizing = false;
+  let voiceCache = { aria: null, jake: null };
+
+  const NATURAL_VOICE_HINTS = {
+    aria: [
+      'microsoft aria online natural',
+      'microsoft jenny online natural',
+      'google us english',
+      'samantha',
+      'ava',
+      'zira',
+      'allison',
+      'victoria',
+      'karen'
+    ],
+    jake: [
+      'microsoft guy online natural',
+      'microsoft davis online natural',
+      'google us english',
+      'daniel',
+      'david',
+      'mark',
+      'alex',
+      'fred'
+    ]
+  };
 
   function read(){
     try { return { ...DEFAULT_STATE, ...JSON.parse(localStorage.getItem(VOICE_KEY) || '{}') }; }
@@ -56,17 +83,62 @@
     } catch {}
   }
 
-  function speak(text, onEnd){
+  function availableVoices(){
+    try { return window.speechSynthesis?.getVoices?.() || []; }
+    catch { return []; }
+  }
+
+  function pickBrowserVoice(id){
+    const assistant = id === 'jake' ? 'jake' : 'aria';
+    const voices = availableVoices();
+    if (!voices.length) return null;
+    const hints = NATURAL_VOICE_HINTS[assistant] || NATURAL_VOICE_HINTS.aria;
+    const exact = hints
+      .map(hint => voices.find(voice => `${voice.name} ${voice.voiceURI}`.toLowerCase().includes(hint)))
+      .find(Boolean);
+    if (exact) return exact;
+    const enUs = voices.filter(voice => /^en[-_]us$/i.test(voice.lang || ''));
+    const natural = enUs.find(voice => /natural|online|premium|enhanced/i.test(`${voice.name} ${voice.voiceURI}`));
+    if (natural) return natural;
+    return enUs[0] || voices.find(voice => /^en/i.test(voice.lang || '')) || voices[0] || null;
+  }
+
+  function getBrowserVoice(id){
+    const assistant = id === 'jake' ? 'jake' : 'aria';
+    const cached = voiceCache[assistant];
+    const voices = availableVoices();
+    if (cached && voices.some(voice => voice.name === cached.name && voice.lang === cached.lang)) return cached;
+    const picked = pickBrowserVoice(assistant);
+    voiceCache[assistant] = picked;
+    return picked;
+  }
+
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.onvoiceschanged = () => {
+      voiceCache = { aria: null, jake: null };
+      const state = read();
+      if (state.activeAssistant) patch({ voiceName: getBrowserVoice(state.activeAssistant)?.name || '' });
+    };
+  }
+
+  function speak(text, onEnd, id){
     try {
       if (!('speechSynthesis' in window)) {
         if (onEnd) setTimeout(onEnd, 400);
         return;
       }
+      const assistant = id || read().activeAssistant || 'aria';
+      const selectedVoice = getBrowserVoice(assistant);
       window.speechSynthesis.cancel();
       const utter = new SpeechSynthesisUtterance(text);
-      utter.rate = 0.96;
-      utter.pitch = 1.02;
+      utter.rate = assistant === 'jake' ? 0.92 : 0.98;
+      utter.pitch = assistant === 'jake' ? 0.86 : 1.06;
       utter.volume = 1;
+      utter.lang = selectedVoice?.lang || 'en-US';
+      if (selectedVoice) {
+        utter.voice = selectedVoice;
+        patch({ voiceName: selectedVoice.name });
+      }
       utter.onend = () => { if (onEnd) onEnd(); };
       window.speechSynthesis.speak(utter);
     } catch {
@@ -132,9 +204,17 @@
       });
       if (!res.ok) throw new Error('assistant endpoint unavailable');
       const data = await res.json();
-      return data.reply || data.text || buildFallbackReply(id, transcript);
+      return {
+        reply: data.reply || data.text || buildFallbackReply(id, transcript),
+        provider: data.provider || data.voice_provider || 'local_budget',
+        costMode: data.voice_cost_mode || 'local'
+      };
     } catch {
-      return buildFallbackReply(id, transcript);
+      return {
+        reply: buildFallbackReply(id, transcript),
+        provider: 'browser_fallback',
+        costMode: 'local'
+      };
     }
   }
 
@@ -161,10 +241,11 @@
       return;
     }
     patch({ status: reason === 'silence' ? 'transcribing after silence' : 'thinking', transcript:clean });
-    const reply = await askBackend(id, clean);
+    const answer = await askBackend(id, clean);
+    const reply = answer.reply;
     const current = read();
-    const history = [{ assistant:id, transcript:clean, reply, at:new Date().toISOString() }, ...(current.history || [])].slice(0, 50);
-    patch({ status:'ai reply', reply, history });
+    const history = [{ assistant:id, transcript:clean, reply, provider:answer.provider, at:new Date().toISOString() }, ...(current.history || [])].slice(0, 50);
+    patch({ status: answer.provider === 'openai' ? 'paid ai reply' : 'free local reply', reply, history, provider:answer.provider, costMode:answer.costMode });
     try{ window.SupportRDRebuild?.recordDiaryAssistantHistory?.(id, clean, reply); }catch{}
     speak(reply, ()=>{
       playTone('outro');
@@ -172,7 +253,7 @@
       const latest = read();
       finalizing = false;
       if (latest.handsFree) setTimeout(()=>startRecognition(latest.activeAssistant || id), 500);
-    });
+    }, id);
   }
 
   function beginSilenceCountdown(id){
@@ -228,9 +309,9 @@
         const id = state.activeAssistant || 'aria';
         const reply = buildFallbackReply(id, state.transcript || 'hair damage support');
         stopRecognition();
-        patch({ status:'ai reply', reply });
+        patch({ status:'free local reply', reply, provider:'browser_fallback' });
         try{ window.SupportRDRebuild?.recordDiaryAssistantHistory?.(id, state.transcript || 'hair damage support', reply); }catch{}
-        speak(reply, ()=>{ playTone('outro'); patch({ status:'complete' }); });
+        speak(reply, ()=>{ playTone('outro'); patch({ status:'complete' }); }, id);
         return;
       }
       stopRecognition();
@@ -239,7 +320,7 @@
         ? 'Microphone permission was blocked. Allow mic access in the browser to use ARIA or Jake voice.'
         : `Mic issue: ${err}.`;
       patch({ status:'mic error', reply:msg });
-      speak(msg, ()=>patch({ status:'complete' }));
+      speak(msg, ()=>patch({ status:'complete' }), id);
     };
 
     recognition.onend = async ()=>{
@@ -268,6 +349,8 @@
       status:'intro sound',
       transcript:'',
       reply:'',
+      provider:'local_budget',
+      voiceName:getBrowserVoice(assistant)?.name || '',
       lastStartedAt:new Date().toISOString()
     });
 
@@ -277,7 +360,7 @@
 
     setTimeout(()=>{
       patch({ status:'How may I help you?', reply:intro });
-      speak(intro, ()=>setTimeout(()=>startRecognition(assistant), 150));
+      speak(intro, ()=>setTimeout(()=>startRecognition(assistant), 150), assistant);
     }, 260);
   }
 
@@ -301,10 +384,12 @@
         <div class="${state.status === 'open mic' ? 'active' : ''}">3. Open mic</div>
         <div class="${state.status === '3 second open mic listening window' ? 'active' : ''}">4. 3 second open mic</div>
         <div class="${/listening|transcribing/.test(state.status) ? 'active' : ''}">5. Transcribing / listening</div>
-        <div class="${state.status === 'ai reply' ? 'active' : ''}">6. AI reply + outro</div>
+        <div class="${/reply/.test(state.status) ? 'active' : ''}">6. Voice reply + outro</div>
       </div>
       <details class="sr-voice-box sr-transcript-hidden">
         <summary>Voice details</summary>
+        <b>Cost mode</b><p>${state.provider === 'openai' ? 'Paid OpenAI voice brain' : 'Free browser voice + local SupportRD brain'}</p>
+        <b>Browser voice</b><p>${state.voiceName || 'Device default voice'}</p>
         <b>Transcript</b><p>${state.transcript || 'Waiting for microphone input...'}</p>
         <b>Reply</b><p>${state.reply || 'Click ARIA or Jake to begin.'}</p>
       </details>
