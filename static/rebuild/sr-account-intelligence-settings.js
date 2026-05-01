@@ -1,0 +1,35 @@
+(function(){
+  const root = window.SupportRDRebuild = window.SupportRDRebuild || {};
+  const KEY = 'srUnifiedAccountBackboneV28';
+  const SETTINGS_KEY = 'srAccountSettingsV1';
+  function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+  function readAccount(){try{return root.getAccountBackbone?.() || JSON.parse(localStorage.getItem(KEY)||'{}')}catch{return {}}}
+  function writeAccount(a){localStorage.setItem(KEY,JSON.stringify(a));try{root.renderAccountBackbonePanel?.()}catch{}return a}
+  function settings(){try{return JSON.parse(localStorage.getItem(SETTINGS_KEY)||'{}')}catch{return {}}}
+  function saveSettings(next){localStorage.setItem(SETTINGS_KEY,JSON.stringify({...settings(),...next,updatedAt:new Date().toISOString()}));return settings()}
+  function tier(){const a=readAccount();const s=settings();return String(s.assistantMode||a.tier||'Greeting').toLowerCase()}
+  function isPremium(){const t=tier();return t.includes('premium')||t.includes('pro')||t.includes('inner')||t.includes('professional')||t.includes('making')}
+  function styleName(){const t=tier();if(t.includes('professional')||t.includes('making'))return 'Professional / Making Money';if(t.includes('inner'))return 'Inner Circle';if(t.includes('premium')||t.includes('pro'))return 'Premium / Pro';if(t.includes('advanced'))return 'Advanced';return 'Greeting'}
+  function push(category,item){const a=readAccount();a.savedFiles=a.savedFiles||{profile:[],diary:[],studio:[],mapChange:[]};a.savedFiles[category]=[{...item,at:new Date().toISOString()},...(a.savedFiles[category]||[])].slice(0,80);writeAccount(a);return a}
+  function profileRead(analysis){const mode=styleName();const a=readAccount();const status=analysis?.status||analysis?.summary||a.profile?.confirmedHairStatus||'hair status pending';const quality1=analysis?.quality1||'presentation clarity';const quality2=analysis?.quality2||'hair confidence';return `${mode} read for ^^ ${a.username||'member'}: confirmed hair status is ${status}. Two qualities showing are ${quality1} and ${quality2}. ARIA will remember this in your Profile and Diary history.`}
+  function patchRecords(){
+    if(root.__accountIntelRecordsPatched)return;root.__accountIntelRecordsPatched=true;
+    const oldHair=root.recordHairAnalysis;
+    root.recordHairAnalysis=function(analysis){const read=profileRead(analysis||{});const out=oldHair?.({...analysis,premiumRead:read,mode:styleName()});push('profile',{type:'hair-analysis',summary:analysis?.summary||analysis?.status||'Hair scan',premiumRead:read});try{root.recordDiaryAssistantHistory?.('ARIA','Profile hair scan completed',read)}catch{}return out};
+    const oldProfile=root.recordProfileImage;
+    root.recordProfileImage=function(image){const a=readAccount();const qualities={quality1:'distinct personal presence',quality2:'hair identity signal'};push('profile',{type:'profile-picture',image,qualities});return oldProfile?.(image)};
+    const oldLive=root.recordLiveRoomEvent;
+    root.recordLiveRoomEvent=function(evt){push('diary',{type:'live-event',...evt});return oldLive?.(evt)};
+    const oldExport=root.recordStudioExport;
+    root.recordStudioExport=function(file){push('studio',{type:'song-export',...file});return oldExport?.(file)};
+    const oldMap=root.recordMapChoice;
+    root.recordMapChoice=function(map,perk){push('mapChange',{type:'perk-use',map,perk,status:'tracked'});return oldMap?.(map,perk)};
+  }
+  function renderSettings(){const a=readAccount();const s=settings();const saved=a.savedFiles||{};return `<section class="sr-panel sr-functional-panel" data-panel="settings"><div class="sr-panel-media sr-functional-media" style="background:radial-gradient(circle at 30% 20%,rgba(114,247,255,.22),transparent 38%),linear-gradient(135deg,#06101f,#172033)"></div><div class="sr-panel-copy sr-functional-copy"><span>ACCOUNT CONTROL</span><h2>Settings</h2><p>Everything saved in SupportRD connects back to this account: Profile scans, Diary live files, Studio songs, and Map perks.</p><section class="sr-room-grid"><article class="sr-room-card"><h3>Assistant Mode</h3><select data-sr-setting="assistantMode"><option ${s.assistantMode==='Greeting'?'selected':''}>Greeting</option><option ${s.assistantMode==='Advanced'?'selected':''}>Advanced</option><option ${s.assistantMode==='Inner Circle'?'selected':''}>Inner Circle</option><option ${s.assistantMode==='Professional / Making Money'?'selected':''}>Professional / Making Money</option></select><p>Current read style: <strong>${esc(styleName())}</strong></p></article><article class="sr-room-card"><h3>Push Alerts</h3><button class="sr-buy-btn" data-build-alert>Preview Hair Alert</button><p data-alert-preview>Random device hair-problem alerts will appear here.</p></article><article class="sr-room-card"><h3>Studio Default</h3><select data-sr-setting="studioFormat"><option ${s.studioFormat==='MP3'?'selected':''}>MP3</option><option ${s.studioFormat==='M4A'?'selected':''}>M4A</option></select><p>Jake follows account history in ${esc(styleName())} style.</p></article><article class="sr-room-card"><h3>Saved Files</h3><p>Profile: ${(saved.profile||[]).length} scans / pictures</p><p>Diary: ${(saved.diary||[]).length} live events / MP4 saves</p><p>Studio: ${(saved.studio||[]).length} songs / exports</p><p>Map: ${(saved.mapChange||[]).length} perk uses</p></article></section></div></section>`}
+  function patchRoutes(){if(root.__settingsRoutePatched)return;root.__settingsRoutePatched=true;const old=root.renderFunctionalPanel;root.renderFunctionalPanel=function(route){if(route==='market'||route==='globaltracker')route='settings';if(route==='settings'){const stage=document.querySelector('#remoteStage');document.querySelectorAll('[data-route]').forEach(b=>b.classList.toggle('active',b.dataset.route==='settings'||b.dataset.route==='market'));if(stage)stage.innerHTML=renderSettings();return}return old?.(route)};window.renderPanel=root.renderFunctionalPanel}
+  function patchButtons(){document.querySelectorAll('[data-route="market"],[data-route="globaltracker"]').forEach(b=>{b.dataset.route='settings';b.textContent='Settings'});}
+  document.addEventListener('change',e=>{const el=e.target.closest('[data-sr-setting]');if(el)saveSettings({[el.dataset.srSetting]:el.value})},true);
+  document.addEventListener('click',e=>{if(e.target.closest('[data-build-alert]')){const messages=['ARIA noticed dryness risk based on your profile history.','Jake says your studio/session history is saved to your account.','Profile reminder: update your hair picture before your next scan.'];const p=document.querySelector('[data-alert-preview]');if(p)p.textContent=messages[Math.floor(Math.random()*messages.length)]}},true);
+  function init(){patchRecords();patchRoutes();patchButtons();setInterval(patchButtons,1500)}
+  root.saveFeatureFile=push;root.buildProfilePremiumRead=profileRead;root.initAccountIntelligenceSettings=init;init();
+})();
