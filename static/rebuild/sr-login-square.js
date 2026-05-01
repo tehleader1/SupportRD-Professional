@@ -5,27 +5,44 @@
   const OWNER_PHONES = ['9802306202','7044533983'];
   const PLAN_LINKS = {
     free: { label:'Free', tier:'Free', href:'/' },
-    premium: { label:'Premium', tier:'Premium', href:'https://shop.supportrd.com/products/aria-ai-voice-inner-circle-tier-premium-account' },
-    pro: { label:'Pro', tier:'Pro', href:'https://shop.supportrd.com/products/aria-professional-making-money-tier-professional-account' },
-    studio: { label:'Studio Jake', tier:'Studio Jake', href:'https://shop.supportrd.com/products/jake-in-the-studio-studio-tier-professional-studio-account' }
+    premium: { label:'Premium', tier:'Premium', href:'https://shop.supportrd.com/products/aria-ai-voice-inner-circle-tier-premium-account', short:'Diary, Profile, ARIA' },
+    pro: { label:'Pro', tier:'Pro', href:'https://shop.supportrd.com/products/aria-professional-making-money-tier-professional-account', short:'Premium perks plus pro routing' },
+    studio: { label:'Studio Jake', tier:'Studio Jake', href:'https://shop.supportrd.com/products/jake-in-the-studio-studio-tier-professional-studio-account', short:'Studio Jake and premium FX' }
   };
-  const PLAN_META = {
-    free: { short:'Start account', tag:'Free', detail:'Basic route with saved settings.' },
-    premium: { short:'Diary, Profile, ARIA', tag:'Premium', detail:'Paid live, celebrations, hair reads.' },
-    pro: { short:'Pro account perks', tag:'Pro', detail:'Premium access plus stronger account perks.' },
-    studio: { short:'Optional Studio Jake', tag:'Studio', detail:'Studio tools and premium FX routing.' }
+  const STATE = {
+    mode: 'rail',
+    provider: '',
+    productCollapsed: localStorage.getItem('srProductCollapsed') === 'true'
   };
+  const DEFAULT_ARIA_PROFILE = '/static/images/woman-waking-up12.jpg';
 
   function esc(v){return String(v ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
   function phone(v){return String(v||'').replace(/[^0-9]/g,'');}
   function read(){try{return JSON.parse(localStorage.getItem(KEY)||'{}');}catch{return {};}}
+  function write(data){localStorage.setItem(KEY,JSON.stringify(data));}
   function isOwner(email,ph){return OWNER_EMAILS.includes(String(email||'').toLowerCase())||OWNER_PHONES.includes(phone(ph));}
   function planKey(v){const raw=String(v||'free').toLowerCase();if(raw.includes('studio'))return 'studio';if(raw.includes('pro'))return 'pro';if(raw.includes('premium'))return 'premium';return PLAN_LINKS[raw]?raw:'free';}
-  function tierFor(plan, owner){return owner?'Premium / Pro / Studio Jake':PLAN_LINKS[planKey(plan)].tier;}
   function paidPlan(plan){return /premium|pro|studio|signals/i.test(String(plan||''));}
+  function tierFor(plan, owner){return owner?'Premium / Pro / Studio Jake':PLAN_LINKS[planKey(plan)].tier;}
   function hasAccess(){const l=read();if(isOwner(l.email,l.phone))return true;return !!l.confirmed&&!!l.emailVerified&&paidPlan(l.tier||l.membershipPlan);}
   function hasStudio(){const l=read();return isOwner(l.email,l.phone)||/studio|pro/i.test(String(l.tier||l.membershipPlan||''));}
-  function statusText(text){const el=document.querySelector('#srLoginStatus');if(el)el.textContent=text;}
+  function displayName(l){const n=String(l.username||'').trim();if(n)return n;const email=String(l.email||'').trim();if(email&&email.includes('@'))return email.split('@')[0]||'Member';const ph=phone(l.phone||l.email);return ph?`Phone ${ph.slice(-4)}`:'SupportRD Member';}
+  function statusText(text){const el=document.querySelector('#srLoginStatus');if(el){el.textContent=text;el.style.display='block';}}
+  function currentProfileImage(){
+    try {
+      const room = JSON.parse(localStorage.getItem('srFunctionalRoomsAdvancedV2') || '{}');
+      const account = root.getAccountBackbone?.() || {};
+      return room.profileImage || account.profile?.latestProfileImage || DEFAULT_ARIA_PROFILE;
+    } catch {
+      return DEFAULT_ARIA_PROFILE;
+    }
+  }
+  function markHtml(){
+    return `<div class="sr-login-mark sr-login-avatar" style="background-image:url('${esc(currentProfileImage())}')" aria-label="ARIA profile image"></div>`;
+  }
+  function cartIcon(){
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="20" r="1.7"></circle><circle cx="18" cy="20" r="1.7"></circle><path d="M3 4h2.6l2.2 11.2a2 2 0 0 0 2 1.6h7.9a2 2 0 0 0 1.9-1.4l1.3-5.4H7.1"></path></svg>';
+  }
 
   function featureFlags(plan, owner){
     const key = owner ? 'studio' : planKey(plan);
@@ -43,54 +60,103 @@
     };
   }
 
-  function paymentLinks(){
-    return `<div class="sr-link-head">Account routes</div>${['free','premium','pro','studio'].map(key=>`<a class="sr-login-link ${key==='free'?'free':''}" href="${esc(PLAN_LINKS[key].href)}" ${key==='free'?'':'target="_blank" rel="noopener"'}><span>${key==='free'?'Free Register':esc(PLAN_LINKS[key].label)}</span><small>${key==='free'?'No checkout':'Checkout'}</small></a>`).join('')}`;
-  }
-
-  function selectedPlan(){
-    const box=document.querySelector('#srLoginSquare');
-    return planKey(box?.dataset.plan || read().membershipPlan || 'free');
-  }
-
-  function planCards(){
-    const selected = selectedPlan();
-    return `<div class="sr-plan-head"><span>Choose access</span><em>${esc(PLAN_LINKS[selected].tier)}</em></div><div class="sr-plan-grid">${Object.entries(PLAN_LINKS).map(([key, plan])=>{const meta=PLAN_META[key];return `<button class="sr-plan-card ${selected===key?'active':''}" type="button" data-plan-pick="${esc(key)}" aria-pressed="${selected===key?'true':'false'}"><span class="sr-plan-dot"></span><span class="sr-plan-copy"><strong>${esc(plan.label)}</strong><small>${esc(meta.short)}</small></span><span class="sr-plan-tag">${esc(meta.tag)}</span></button>`;}).join('')}</div><div class="sr-plan-detail">${esc(PLAN_META[selected].detail)}</div>`;
-  }
-
-  function field(dataAttr,type,label,value,placeholder,auto){
-    return `<label class="sr-field"><span>${esc(label)}</span><input ${dataAttr} type="${esc(type)}" placeholder="${esc(placeholder||label)}" value="${esc(value||'')}" autocomplete="${esc(auto||'off')}"></label>`;
-  }
-
   function css(){
     if(document.querySelector('#srLoginSquareCss'))return;
     const s=document.createElement('style');
     s.id='srLoginSquareCss';
-    s.textContent='.sr-login-square{position:fixed;right:0;top:64px;z-index:7000;width:min(260px,calc(100vw - 92px));max-height:calc(100dvh - 76px);overflow:auto;box-sizing:border-box;border:1px solid rgba(148,163,184,.3);border-right:0;border-left:3px solid rgba(16,163,127,.86);border-radius:8px 0 0 8px;background:linear-gradient(180deg,rgba(15,23,32,.86),rgba(8,13,21,.82));backdrop-filter:blur(20px);color:#f8fafc;padding:8px;box-shadow:0 10px 28px rgba(0,0,0,.24);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.sr-login-square *{box-sizing:border-box}.sr-login-square::-webkit-scrollbar{width:6px}.sr-login-square::-webkit-scrollbar-thumb{background:rgba(148,163,184,.35);border-radius:999px}.sr-login-head{display:grid;grid-template-columns:30px 1fr;gap:7px;align-items:center;margin-bottom:7px}.sr-login-mark{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;background:linear-gradient(135deg,#10a37f,#7dd3fc);color:#06101f;font-weight:900;font-size:.72rem;box-shadow:inset 0 1px rgba(255,255,255,.38)}.sr-login-title h3{margin:0;font-size:.82rem;line-height:1.1}.sr-login-title p{margin:2px 0 0;color:#94a3b8;font-size:.6rem;line-height:1.2}.sr-login-chip,.sr-login-access{grid-column:1/-1;display:inline-flex;align-items:center;justify-content:flex-start;min-height:22px;border:1px solid rgba(16,163,127,.38);border-radius:999px;padding:0 7px;color:#b7f7dc;background:rgba(16,163,127,.12);font-size:.58rem;font-weight:800;white-space:nowrap}.sr-login-copy{margin:0 0 7px;padding:6px;border:1px solid rgba(148,163,184,.18);border-radius:8px;background:rgba(255,255,255,.035);color:#cbd5e1;font-size:.58rem;line-height:1.25}.sr-login-fields{display:grid;gap:5px}.sr-field{display:block}.sr-field span{display:block;margin:0 0 2px;color:#a7b3c5;font-size:.58rem;font-weight:800;text-transform:uppercase}.sr-field input{width:100%;height:32px;border:1px solid rgba(148,163,184,.24);border-radius:8px;background:rgba(2,6,13,.48);color:#f8fafc;padding:0 8px;font-size:.74rem;outline:0;transition:border-color .16s ease,box-shadow .16s ease,background .16s ease}.sr-field input:focus{border-color:rgba(16,163,127,.82);box-shadow:0 0 0 2px rgba(16,163,127,.18);background:rgba(2,6,13,.72)}.sr-field input::placeholder{color:#64748b}.sr-plan-head{display:flex;align-items:center;justify-content:space-between;gap:6px;margin:7px 0 5px}.sr-plan-head span{color:#dbeafe;font-size:.64rem;font-weight:900}.sr-plan-head em{font-style:normal;color:#86efac;font-size:.58rem;font-weight:900}.sr-plan-grid{display:grid;grid-template-columns:1fr;gap:5px}.sr-plan-card{position:relative;display:grid;grid-template-columns:10px 1fr;align-items:center;gap:6px;min-height:40px;margin:0;padding:6px;border:1px solid rgba(148,163,184,.2);border-radius:8px;background:rgba(255,255,255,.04);color:#e5edf7;text-align:left;cursor:pointer}.sr-plan-card:hover{border-color:rgba(125,211,252,.45);background:rgba(125,211,252,.07)}.sr-plan-card.active{border-color:rgba(16,163,127,.9);background:linear-gradient(180deg,rgba(16,163,127,.18),rgba(16,163,127,.07));box-shadow:0 0 0 1px rgba(16,163,127,.2)}.sr-plan-dot{width:8px;height:8px;border:2px solid rgba(148,163,184,.55);border-radius:50%;display:block}.sr-plan-card.active .sr-plan-dot{border-color:#10a37f;background:#10a37f;box-shadow:inset 0 0 0 2px #0f1720}.sr-plan-copy strong{display:block;font-size:.68rem;line-height:1.1}.sr-plan-copy small{display:block;margin-top:1px;color:#9caec1;font-size:.55rem;font-weight:700;line-height:1.1}.sr-plan-tag{display:none}.sr-plan-detail{margin-top:6px;border-left:3px solid #10a37f;padding:5px 6px;background:rgba(16,163,127,.08);border-radius:0 8px 8px 0;color:#b6c7d9;font-size:.58rem;line-height:1.25}.sr-provider-row{display:grid;grid-template-columns:1fr;gap:5px;margin-top:7px}.sr-login-square button{min-height:32px;border:1px solid rgba(148,163,184,.2);border-radius:8px;background:rgba(255,255,255,.055);color:#f8fafc;font-weight:850;font-size:.68rem;cursor:pointer;transition:transform .14s ease,border-color .14s ease,background .14s ease}.sr-login-square button:hover{transform:translateY(-1px);border-color:rgba(125,211,252,.46);background:rgba(125,211,252,.08)}.sr-login-actions{display:grid;grid-template-columns:1fr;gap:5px;margin-top:7px}.sr-login-actions button{margin:0;padding:0 8px}.sr-login-actions button[data-login-save]{min-height:34px;background:#10a37f;border-color:#10a37f;color:#fff;font-size:.72rem;box-shadow:0 8px 22px rgba(16,163,127,.18)}.sr-login-actions .ghost{background:rgba(255,255,255,.03);color:#d7e1ed}.sr-login-links{display:grid;grid-template-columns:1fr;gap:5px;margin-top:7px}.sr-link-head{grid-column:1/-1;color:#94a3b8;font-size:.58rem;font-weight:900;text-transform:uppercase}.sr-login-link{display:flex;align-items:center;justify-content:space-between;gap:6px;min-height:32px;border:1px solid rgba(148,163,184,.2);border-radius:8px;padding:5px 7px;color:#f8fafc;text-decoration:none;background:rgba(255,255,255,.04);font-size:.62rem;font-weight:900}.sr-login-link small{color:#8ea0b4;font-size:.55rem;font-weight:800}.sr-login-link.free{border-color:rgba(134,239,172,.35);background:rgba(34,197,94,.12);color:#dcfce7}.sr-login-status{border:1px solid rgba(148,163,184,.18);border-radius:8px;background:rgba(255,255,255,.035);padding:6px;margin-top:7px;color:#b9c6d6;font-size:.58rem;line-height:1.25}.sr-account-grid{display:grid;grid-template-columns:1fr;gap:5px;margin:7px 0}.sr-account-stat{border:1px solid rgba(148,163,184,.18);border-radius:8px;background:rgba(255,255,255,.035);padding:6px}.sr-account-stat span{display:block;color:#94a3b8;font-size:.58rem;font-weight:900;text-transform:uppercase}.sr-account-stat strong{display:block;margin-top:2px;color:#f8fafc;font-size:.68rem}.sr-login-note{font-size:.62rem;color:#b9c6d6;line-height:1.25;margin:6px 0}.sr-login-name{color:#fff;font-weight:900}@media(max-width:390px){.sr-login-square{top:54px;width:min(238px,calc(100vw - 104px));max-height:calc(100dvh - 64px);padding:8px}}';
+    s.textContent=`
+      .sr-login-square,.sr-product-pop{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#f8fafc}
+      .sr-login-square{position:fixed;right:0;top:64px;z-index:7000;max-height:calc(100dvh - 76px);overflow:auto;box-sizing:border-box}.sr-login-square.is-rail,.sr-login-square.is-account{width:252px}.sr-login-square.is-open{width:190px}
+      .sr-login-shell,.sr-product-pop{box-sizing:border-box;border:1px solid rgba(148,163,184,.3);border-right:0;border-radius:8px 0 0 8px;background:linear-gradient(180deg,rgba(15,23,32,.86),rgba(8,13,21,.82));backdrop-filter:blur(20px);box-shadow:0 10px 28px rgba(0,0,0,.24)}
+      .sr-login-shell{padding:7px}.sr-login-square *,.sr-product-pop *{box-sizing:border-box}.sr-login-square::-webkit-scrollbar{width:6px}.sr-login-square::-webkit-scrollbar-thumb{background:rgba(148,163,184,.35);border-radius:999px}
+      .sr-login-head,.sr-rail-row{display:flex;align-items:center;gap:6px;margin-bottom:6px}.sr-rail-row{display:grid;grid-template-columns:24px 1fr auto auto;margin-bottom:0;min-height:34px}.sr-login-mark{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;background:linear-gradient(135deg,#10a37f,#7dd3fc);color:#06101f;font-weight:1000;font-size:.62rem;overflow:hidden}.sr-login-avatar{background-size:cover!important;background-position:center!important;color:transparent;box-shadow:inset 0 0 0 1px rgba(255,255,255,.45)}.sr-login-title strong,.sr-rail-label{display:block;font-size:.68rem;line-height:1.05;font-weight:1000}.sr-login-title span,.sr-rail-sub{display:block;color:#94a3b8;font-size:.52rem;line-height:1.12}
+      .sr-field input{width:100%;height:29px;margin:0 0 5px;padding:0 7px;border-radius:7px;border:1px solid rgba(148,163,184,.24);background:rgba(2,6,13,.48);color:#f8fafc;font-size:.68rem;outline:0}.sr-field input:focus{border-color:rgba(16,163,127,.82);box-shadow:0 0 0 2px rgba(16,163,127,.18)}
+      .sr-login-square button,.sr-product-pop button,.sr-product-pop a{min-height:29px;border-radius:999px;border:1px solid rgba(148,163,184,.22);font-size:.62rem;font-weight:1000;cursor:pointer;text-decoration:none}.sr-login-square button{width:100%;margin-top:4px;background:rgba(255,255,255,.045);color:#f7fbff}.sr-login-square .primary{background:#10a37f;color:#fff;border-color:#10a37f}.sr-login-row{display:grid;grid-template-columns:1fr 1fr;gap:4px}.sr-login-row button{margin-top:0;border-radius:7px}.sr-provider-row{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:4px}.sr-provider-row button{margin-top:0;background:#f8fafc;color:#07101f;border-radius:7px}.sr-product-toggle{display:block;width:100%;margin-top:5px;border:1px solid rgba(125,211,252,.28)!important;background:rgba(125,211,252,.08)!important;color:#dff7ff!important}.sr-login-square.is-rail .sr-product-toggle{margin-top:0;width:auto;padding:0 9px}.sr-cart-btn{display:grid!important;place-items:center!important;width:31px!important;min-width:31px!important;padding:0!important}.sr-cart-btn svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round}
+      .sr-login-status{display:none;margin-top:5px;border:1px solid rgba(16,163,127,.28);border-radius:7px;background:rgba(16,163,127,.08);padding:5px;color:#b7f7dc;font-size:.54rem;line-height:1.22}
+      .sr-product-pop{position:fixed;right:252px;top:64px;z-index:6999;width:232px;padding:8px}.sr-product-pop.is-collapsed{display:none}.sr-product-pop strong{display:block;font-size:.78rem}.sr-product-pop p{margin:4px 0 7px;color:#b7c7d8;font-size:.58rem;line-height:1.24}.sr-product-actions{display:grid;gap:5px}.sr-product-pop a,.sr-product-pop button{display:flex;align-items:center;justify-content:space-between;gap:6px;background:rgba(255,255,255,.045);color:#fff;padding:0 8px;border-radius:7px}.sr-product-pop a b,.sr-product-pop button b{font-size:.58rem;color:#8ea0b4}.sr-product-pop .checkout{background:rgba(16,163,127,.14);border-color:rgba(16,163,127,.38);color:#dcfce7}.sr-product-pop .free{background:rgba(125,211,252,.08);border-color:rgba(125,211,252,.28);color:#e0f7ff}
+      .sr-account-grid{display:grid;gap:5px;margin-top:5px}.sr-account-stat{display:flex;justify-content:space-between;gap:5px;border:1px solid rgba(255,255,255,.12);border-radius:7px;background:rgba(255,255,255,.04);padding:5px;font-size:.54rem}.sr-account-stat b{color:#f8fafc}.sr-account-note{color:#9fb0c4;font-size:.54rem;line-height:1.22;margin:4px 0}.sr-login-square .ghost{background:rgba(255,255,255,.03);color:#d7e1ed}
+      @media(max-width:560px){.sr-login-square{top:56px}.sr-login-square.is-rail,.sr-login-square.is-account{width:226px}.sr-login-square.is-open{width:168px}.sr-product-pop{right:226px;top:56px;width:178px}.sr-login-title span,.sr-rail-sub{display:none}.sr-product-pop p{display:none}}
+    `;
     document.head.appendChild(s);
   }
 
-  function html(){
+  function productPopupHtml(){
+    const provider = STATE.provider ? ` for ${esc(STATE.provider)}` : '';
+    return `<aside class="sr-product-pop ${STATE.productCollapsed?'is-collapsed':''}" id="srProductPop">
+      <strong>Account Status</strong>
+      <p>Register${provider} free, or choose Premium, Pro, or Studio Jake. The status is saved to this account and the checkout link opens.</p>
+      <div class="sr-product-actions">
+        ${['premium','pro','studio'].map(key=>`<a class="checkout" href="${esc(PLAN_LINKS[key].href)}" target="_blank" rel="noopener" data-sr-checkout-plan="${key}"><span>${esc(PLAN_LINKS[key].label)}</span><b>${esc(PLAN_LINKS[key].short)}</b></a>`).join('')}
+        <button class="free" type="button" data-sr-free-account><span>Continue Free</span><b>Saved account</b></button>
+        <button type="button" data-sr-collapse-products><span>Collapse</span><b>Reopen anytime</b></button>
+      </div>
+    </aside>`;
+  }
+
+  function renderProductPopup(show){
+    document.getElementById('srProductPop')?.remove();
+    if(!show || STATE.productCollapsed)return;
+    document.body.insertAdjacentHTML('beforeend',productPopupHtml());
+  }
+
+  function railHtml(){
     const l=read();
-    if(l.confirmed){
-      const flags=featureFlags(l.membershipPlan||l.tier,isOwner(l.email,l.phone));
-      return `<div class="sr-login-head"><div class="sr-login-mark">SR</div><div class="sr-login-title"><h3>Account Access</h3><p>SupportRD routes, perks, and saved features.</p></div><span class="sr-login-access">${hasAccess()?'Premium / Pro active':'Free account'}</span></div><p class="sr-login-note"><span class="sr-login-name">${esc(l.username||'DYGENRJE')}</span><br>${esc(l.email||'')} ${l.phone?`<br>${esc(l.phone)}`:''}<br>${l.emailVerified?'Verified email account':'Email confirmation pending'}</p><div class="sr-account-grid"><div class="sr-account-stat"><span>Diary Live</span><strong>${flags.diaryPaidLive?'Active':'Locked'}</strong></div><div class="sr-account-stat"><span>Profile Reads</span><strong>${flags.profilePremiumReadings?'Premium':'Free'}</strong></div><div class="sr-account-stat"><span>Studio FX</span><strong>${flags.studioPremiumFx?'Premium':'Free'}</strong></div><div class="sr-account-stat"><span>Map Perks</span><strong>${flags.mapPerksSavedToAccount?'Saved':'Basic'}</strong></div></div><div class="sr-login-links">${paymentLinks()}</div><div class="sr-login-actions"><button data-login-edit>Update Login</button><button class="ghost" data-email-confirm>Verify Email</button><button class="ghost" data-forgot-password>Forgot Password</button></div><div id="srLoginStatus" class="sr-login-status">Account features are saved to this browser and account backbone.</div>`;
+    if(STATE.mode==='rail'){
+      return `<div class="sr-login-shell"><div class="sr-rail-row">
+        ${markHtml()}<div><div class="sr-rail-label">Login</div><span class="sr-rail-sub">SupportRD account</span></div>
+        <button class="primary" type="button" data-login-open>Login</button><button type="button" data-login-register>Register</button>
+      </div><div class="sr-login-row" style="margin-top:5px;grid-template-columns:1fr 31px"><button class="sr-product-toggle" type="button" data-sr-products>Account Status</button><button class="sr-cart-btn" type="button" data-sr-cart aria-label="Open SupportRD catalog">${cartIcon()}</button></div></div>`;
     }
-    return `<div class="sr-login-head"><div class="sr-login-mark">SR</div><div class="sr-login-title"><h3>SupportRD Login</h3><p>Clean account routing for free, Premium, Pro, and Studio Jake.</p></div><span class="sr-login-chip">Smart access</span></div><p class="sr-login-copy">Email confirms registration. Password confirmation is only used for register or reset, not normal login.</p><div class="sr-login-fields">${field('data-login-name','text','Profile name',l.username||'','Your public name','name')}${field('data-login-email','email','Email',l.email||'','you@example.com','email')}${field('data-login-phone','tel','Phone number',l.phone||'','Optional contact number','tel')}${field('data-login-password','password','Password','','Enter password','new-password')}${field('data-login-password-confirm','password','Confirm password','','Only for reset/register','new-password')}</div>${planCards()}<div class="sr-provider-row"><button data-provider="gmail">Gmail</button><button data-provider="microsoft">Microsoft</button><button data-provider="apple">Apple</button></div><div class="sr-login-actions"><button data-login-save>Login</button><button class="ghost" data-email-confirm>Email Confirmation</button><button class="ghost" data-forgot-password>Forgot Password</button></div><div class="sr-login-links">${paymentLinks()}</div><div id="srLoginStatus" class="sr-login-status">Login saves the account name, selected plan, and feature access popout.</div>`;
+    const register=STATE.mode==='register';
+    return `<div class="sr-login-shell">
+      <div class="sr-login-head">${markHtml()}<div class="sr-login-title"><strong>${register?'Register':'Login'}</strong><span>${register?'Verify email in background':'Free, Premium, Pro, Studio'}</span></div></div>
+      <label class="sr-field"><input data-login-email type="email" placeholder="Email" value="${esc(l.email||'')}" autocomplete="email"></label>
+      <label class="sr-field"><input data-login-password type="password" placeholder="Password" autocomplete="${register?'new-password':'current-password'}"></label>
+      <div class="sr-login-row"><button class="primary" type="button" ${register?'data-login-register':'data-login-save'}>${register?'Register':'Login'}</button><button type="button" ${register?'data-login-open':'data-login-register'}>${register?'Login':'Register'}</button></div>
+      <div class="sr-provider-row"><button type="button" data-provider="Google">Google</button><button type="button" data-provider="Microsoft">Microsoft</button></div>
+      <div class="sr-login-row" style="grid-template-columns:1fr 31px"><button class="sr-product-toggle" type="button" data-sr-products>Account Status</button><button class="sr-cart-btn" type="button" data-sr-cart aria-label="Open SupportRD catalog">${cartIcon()}</button></div>
+      <button class="ghost" type="button" data-forgot-password>Forgot Password</button>
+      <div id="srLoginStatus" class="sr-login-status"></div>
+    </div>`;
+  }
+
+  function accountHtml(){
+    const l=read();
+    const owner=isOwner(l.email,l.phone);
+    const flags=featureFlags(l.membershipPlan||l.tier,owner);
+    const access=hasAccess();
+    return `<div class="sr-login-shell">
+      <div class="sr-login-head">${markHtml()}<div class="sr-login-title"><strong>${esc(displayName(l))}</strong><span>${esc(access?tierFor(l.membershipPlan,owner):'Free account')}</span></div></div>
+      <p class="sr-account-note">${esc(l.email||l.phone||'Local account')}<br>${l.emailVerified?'Verified email account':l.verificationSent?'Verification sent to email':'Free account saved'}</p>
+      <div class="sr-account-grid">
+        <div class="sr-account-stat"><span>Diary Live</span><b>${flags.diaryPaidLive?'Active':'Locked'}</b></div>
+        <div class="sr-account-stat"><span>Profile</span><b>${flags.profilePremiumReadings?'Premium':'Free'}</b></div>
+        <div class="sr-account-stat"><span>Studio FX</span><b>${flags.studioPremiumFx?'Premium':'Free'}</b></div>
+        <div class="sr-account-stat"><span>Studio Jake</span><b>${flags.studioJake?'Active':'Optional'}</b></div>
+      </div>
+      <div class="sr-login-row" style="grid-template-columns:1fr 31px"><button class="sr-product-toggle" type="button" data-sr-products>Account Status</button><button class="sr-cart-btn" type="button" data-sr-cart aria-label="Open SupportRD catalog">${cartIcon()}</button></div>
+      <button type="button" data-login-edit>Login</button>
+      <button class="ghost" type="button" data-email-confirm>Verify Email</button>
+      <button class="ghost" type="button" data-forgot-password>Forgot Password</button>
+      <div id="srLoginStatus" class="sr-login-status"></div>
+    </div>`;
   }
 
   function render(){
     css();
     let box=document.querySelector('#srLoginSquare');
     if(!box){box=document.createElement('aside');box.id='srLoginSquare';box.className='sr-login-square';document.body.appendChild(box);}
-    if(!box.dataset.plan)box.dataset.plan=planKey(read().membershipPlan||read().tier||'free');
-    box.innerHTML=html();
+    const l=read();
+    box.className=`sr-login-square ${l.confirmed?'is-account':STATE.mode==='rail'?'is-rail':'is-open'}`;
+    box.innerHTML=l.confirmed?accountHtml():railHtml();
+    renderProductPopup(STATE.mode==='register'||!!STATE.provider);
   }
 
   function applyAccountFeatures(login, owner){
     const flags=featureFlags(login.membershipPlan, owner);
     const cycle=new Date().toISOString().slice(0,10);
     try {
-      root.patchAccountBackbone?.('membership',{ plan:login.membershipPlan, tier:login.tier, verifiedEmail:!!login.emailVerified, paymentLinks:PLAN_LINKS });
+      root.patchAccountBackbone?.('membership',{ plan:login.membershipPlan, tier:login.tier, verifiedEmail:!!login.emailVerified, checkoutPending:!!login.checkoutPending, paymentLink:login.paymentLink, paymentLinks:PLAN_LINKS });
       root.patchAccountBackbone?.('features',flags);
       root.patchAccountBackbone?.('diary',{ paidLive:flags.diaryPaidLive, ariaCelebrations:flags.ariaCelebrations });
       root.patchAccountBackbone?.('profile',{ displayName:login.username, premiumHistoricalReadings:flags.profilePremiumReadings, summaryReadings:flags.profileSummaryReadings });
@@ -102,32 +168,87 @@
     } catch {}
   }
 
-  function save(){
-    const email=document.querySelector('[data-login-email]')?.value.trim()||'';
-    const ph=document.querySelector('[data-login-phone]')?.value||'';
-    const name=document.querySelector('[data-login-name]')?.value.trim()||'';
-    const pw=document.querySelector('[data-login-password]')?.value||'';
-    const confirm=document.querySelector('[data-login-password-confirm]')?.value||'';
-    if(pw&&confirm&&pw!==confirm){statusText('Password confirmation does not match.');return;}
+  function baseLogin(plan, extra){
+    const email=document.querySelector('[data-login-email]')?.value.trim() || read().email || '';
+    const pw=document.querySelector('[data-login-password]')?.value || '';
+    const ph=phone(email);
     const owner=isOwner(email,ph);
-    const plan=owner?'studio':selectedPlan();
-    const login={username:owner?'DYGENRJE':(name||email.split('@')[0]||'Member'),email,phone:ph,tier:tierFor(plan,owner),membershipPlan:plan,confirmed:true,emailVerified:owner||!!email,provider:document.querySelector('#srLoginSquare')?.dataset.provider||'',features:featureFlags(plan,owner),paymentLink:PLAN_LINKS[plan].href,at:new Date().toISOString()};
-    localStorage.setItem(KEY,JSON.stringify(login));
+    const key=owner?'studio':planKey(plan);
+    const username=owner?'DYGENRJE':displayName({email,phone:ph});
+    return Object.assign({
+      username,
+      email: ph === email ? '' : email,
+      phone: ph === email ? ph : '',
+      passwordSet: !!pw,
+      tier: tierFor(key,owner),
+      membershipPlan: key,
+      confirmed: true,
+      emailVerified: owner,
+      provider: STATE.provider || 'email',
+      features: featureFlags(key,owner),
+      paymentLink: PLAN_LINKS[key].href,
+      at: new Date().toISOString()
+    }, extra || {});
+  }
+
+  function finish(login){
+    const owner=isOwner(login.email,login.phone);
+    write(login);
     if(owner)localStorage.setItem('srSignalsGroupPaid','true');
     applyAccountFeatures(login,owner);
+    document.dispatchEvent(new CustomEvent('sr-login-updated',{detail:login}));
     render();
   }
 
-  async function accountEmail(kind){
+  function saveLogin(){
+    const email=document.querySelector('[data-login-email]')?.value.trim() || '';
+    if(!email){statusText('Enter an email or the approved phone number first.');return;}
+    finish(baseLogin('free',{emailVerified:isOwner(email,email), provider:'email'}));
+  }
+
+  async function registerFree(){
+    const email=document.querySelector('[data-login-email]')?.value.trim() || '';
+    if(!email){statusText('Enter an email first so verification can be sent.');return;}
+    STATE.mode='register';
+    STATE.provider='';
+    STATE.productCollapsed=false;
+    localStorage.removeItem('srProductCollapsed');
+    const login=baseLogin('free',{emailVerified:false,verificationSent:true,provider:'email'});
+    finish(login);
+    await accountEmail('confirm',email);
+    statusText(`Verification sent to ${email}. Continue free, or open Products for Premium, Pro, or Studio Jake.`);
+  }
+
+  function chooseProduct(plan){
+    const key=planKey(plan);
+    const login=baseLogin(key,{checkoutPending:false,checkoutLinked:true,emailVerified:true,paymentLink:PLAN_LINKS[key].href,paymentReturnStatus:PLAN_LINKS[key].tier});
+    finish(login);
+  }
+
+  function providerAuth(provider){
+    STATE.provider=provider;
+    STATE.mode='register';
+    STATE.productCollapsed=false;
+    localStorage.removeItem('srProductCollapsed');
+    render();
+    const email=document.querySelector('[data-login-email]')?.value.trim() || '';
+    if(provider==='Google' && OWNER_EMAILS.includes(email.toLowerCase())){
+      finish(baseLogin('studio',{provider:'google',emailVerified:true,owner:true}));
+      return;
+    }
+    statusText(`${provider} selected. Choose a product checkout or continue with a free account.`);
+  }
+
+  async function accountEmail(kind, forcedEmail){
     const l=read();
-    const email=document.querySelector('[data-login-email]')?.value.trim()||l.email||'';
+    const email=forcedEmail || document.querySelector('[data-login-email]')?.value.trim() || l.email || '';
     if(!email){statusText('Enter an email first.');return;}
     const endpoint=kind==='reset'?'/api/account/password-reset/request':'/api/account/email-confirmation';
     statusText(kind==='reset'?'Sending password reset route...':'Sending email confirmation route...');
     try {
-      const res=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,display_name:document.querySelector('[data-login-name]')?.value||l.username||'SupportRD Member'})});
+      const res=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,display_name:displayName(l)})});
       const data=await res.json();
-      if(data.ok) statusText(data.email_sent?'Email sent. Check the inbox for the confirmation route.':`Confirmation route ready: ${data.confirmation_url||data.reset_url||'server returned a token route'}`);
+      if(data.ok) statusText(data.email_sent?'Email sent. Check the inbox for the route.':`Route ready: ${data.confirmation_url||data.reset_url||'server returned a token route'}`);
       else statusText(data.error||'Email route could not be created yet.');
     } catch {
       statusText('Email route endpoint is not reachable on this deploy yet.');
@@ -135,14 +256,20 @@
   }
 
   document.addEventListener('click',e=>{
-    const plan=e.target.closest('[data-plan-pick]');
-    if(plan){document.querySelector('#srLoginSquare').dataset.plan=plan.dataset.planPick;render();return;}
-    if(e.target.closest('[data-login-edit]')){localStorage.removeItem(KEY);render();return;}
-    const p=e.target.closest('[data-provider]');
-    if(p){document.querySelector('#srLoginSquare').dataset.provider=p.dataset.provider;statusText(`${p.dataset.provider} selected. OAuth can be connected server-side.`);return;}
+    if(e.target.closest('[data-login-open]')){STATE.mode='login';STATE.provider='';render();return;}
+    if(e.target.closest('[data-login-save]')){saveLogin();return;}
+    if(e.target.closest('[data-login-register]')){if(STATE.mode!=='register'){STATE.mode='register';render();return;} registerFree();return;}
+    const provider=e.target.closest('[data-provider]');
+    if(provider){providerAuth(provider.dataset.provider);return;}
+    if(e.target.closest('[data-sr-products]')){STATE.productCollapsed=false;localStorage.removeItem('srProductCollapsed');renderProductPopup(true);return;}
+    if(e.target.closest('[data-sr-cart]')){root.renderFunctionalPanel?.('catalog') || root.navigateTo?.('catalog');document.getElementById('srProductPop')?.remove();return;}
+    if(e.target.closest('[data-sr-collapse-products]')){STATE.productCollapsed=true;localStorage.setItem('srProductCollapsed','true');document.getElementById('srProductPop')?.remove();return;}
+    if(e.target.closest('[data-sr-free-account]')){finish(baseLogin('free',{emailVerified:false,verificationSent:STATE.mode==='register',provider:(STATE.provider||'email').toLowerCase()}));return;}
+    const checkout=e.target.closest('[data-sr-checkout-plan]');
+    if(checkout){chooseProduct(checkout.dataset.srCheckoutPlan);return;}
+    if(e.target.closest('[data-login-edit]')){localStorage.removeItem(KEY);STATE.mode='login';STATE.provider='';render();return;}
     if(e.target.closest('[data-email-confirm]')){accountEmail('confirm');return;}
     if(e.target.closest('[data-forgot-password]')){accountEmail('reset');return;}
-    if(e.target.closest('[data-login-save]'))save();
   },true);
 
   root.hasPremiumEntitlement=hasAccess;

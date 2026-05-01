@@ -2,11 +2,15 @@
   const root = window.SupportRDRebuild = window.SupportRDRebuild || {};
   const KEY = 'srFunctionalRoomsAdvancedV2';
   const SETTINGS_KEY = 'srAccountSettingsV1';
+  const CART_KEY = 'srCatalogCartV1';
+  const DEFAULT_ARIA_PROFILE = '/static/images/woman-waking-up12.jpg';
 
   function read(){ try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch { return {}; } }
   function write(next){ localStorage.setItem(KEY, JSON.stringify({ ...read(), ...(next || {}) })); return read(); }
   function settings(){ try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'); } catch { return {}; } }
   function saveSettings(next){ localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...settings(), ...(next || {}), updatedAt:new Date().toISOString() })); return settings(); }
+  function cart(){ try { return JSON.parse(localStorage.getItem(CART_KEY) || '[]'); } catch { return []; } }
+  function saveCart(items){ localStorage.setItem(CART_KEY, JSON.stringify((items || []).filter(Boolean))); return cart(); }
   function esc(v){ return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function account(){ try { return root.getAccountBackbone?.() || {}; } catch { return {}; } }
   function loginState(){ try { return JSON.parse(localStorage.getItem('srLoginPanelV27') || '{}'); } catch { return {}; } }
@@ -92,6 +96,8 @@
     const a = account();
     const s = read();
     const latest = (a.profile?.hairAnalyses || [])[0] || {};
+    const profileImage = s.profileImage || a.profile?.latestProfileImage || DEFAULT_ARIA_PROFILE;
+    const hasCustomProfileImage = !!(s.profileImage || a.profile?.latestProfileImage);
     const qualities = s.profileQualities || latest.qualities || {
       quality1: latest.quality1 || 'hair confidence signal',
       quality2: latest.quality2 || 'routine readiness signal'
@@ -105,10 +111,10 @@
           <div id="srHairAnalysisRoom" class="sr-real-room-mount"></div>
         </article>
         ${card('Editable Profile Picture','Use this as the account identity anchor. The image and two qualities save into Profile history.',
-          `<input class="sr-file-input" type="file" accept="image/*" data-profile-image><div class="sr-preview-box" id="profileScanPreview">${s.profileImage ? `<img src="${esc(s.profileImage)}" alt="Profile preview" style="width:100%;max-width:180px;border-radius:.8rem;">` : 'Upload profile picture.'}</div>`)}
+          `<input class="sr-file-input" type="file" accept="image/*" data-profile-image><div class="sr-preview-box" id="profileScanPreview"><img src="${esc(profileImage)}" alt="${hasCustomProfileImage?'Profile preview':'ARIA default profile preview'}" style="width:100%;max-width:180px;aspect-ratio:1/1;object-fit:cover;border-radius:.8rem;"><small>${hasCustomProfileImage?'Profile picture saved.':'ARIA default is showing until a profile picture is uploaded.'}</small></div>`)}
         ${card('Two Saved Qualities','Save the two clean signals ARIA/Jake should remember about this person and their hair.',
           `<input data-profile-quality-one placeholder="Quality 1" value="${esc(qualities.quality1)}"><input data-profile-quality-two placeholder="Quality 2" value="${esc(qualities.quality2)}"><textarea data-profile-notes placeholder="Hair problem, event, routine, product concern, or confirmed scan note...">${esc(s.profileNotes || latest.summary || '')}</textarea><div class="sr-room-actions"><button class="sr-buy-btn" type="button" data-profile-prep>Save Hair Summary</button><button class="sr-mini-btn" type="button" data-profile-speak>Speak Analysis</button><button class="sr-mini-btn" type="button" data-voice-start="aria">Ask ARIA</button><button class="sr-mini-btn" type="button" data-voice-start="jake">Ask Jake</button></div>`)}
-      </section>`, asset('proGirl'));
+      </section>`, profileImage);
   }
 
   function renderStudio(){
@@ -143,15 +149,81 @@
   }
 
   function productCard(product){
-    return `<article class="sr-product-card"><img src="${esc(product.img || asset('healthyHair'))}" alt="${esc(product.title)}" loading="lazy" onerror="this.style.display='none'"><span>${esc(product.tag || product.price || 'Shop')}</span><h3>${esc(product.title)}</h3><p>${esc(product.desc || '')}</p><a class="sr-buy-btn" href="${esc(product.href || 'https://shop.supportrd.com')}" target="_blank" rel="noopener" data-buy="${esc(product.id || '')}">${esc(product.buy || `Buy / View ${product.title}`)}</a></article>`;
+    return `<article class="sr-product-card" data-catalog-item="${esc(product.id || '')}"><img src="${esc(product.img || asset('healthyHair'))}" alt="${esc(product.title)}" loading="lazy" onerror="this.style.display='none'"><span>${esc(product.tag || product.price || 'Shop')}</span><h3>${esc(product.title)}</h3><p>${esc(product.desc || '')}</p><div class="sr-room-actions"><button class="sr-mini-btn" type="button" data-cart-add="${esc(product.id || '')}">Add To Cart</button><a class="sr-buy-btn" href="${esc(product.href || 'https://shop.supportrd.com')}" target="_blank" rel="noopener" data-buy="${esc(product.id || '')}">${esc(product.buy || `Buy / View ${product.title}`)}</a></div></article>`;
+  }
+
+  function catalogItems(packages, products){
+    const productFamily = products.find(p=>p.id === 'full-line') || products[products.length - 1] || {};
+    const premium = packages.find(p=>/premium/i.test(p.id || p.title || '')) || {};
+    const pro = packages.find(p=>/pro/i.test(p.id || p.title || '')) || {};
+    const studio = packages.find(p=>/studio/i.test(p.id || p.title || '')) || {};
+    const bundles = [
+      { id:'bundle-premium-hair', title:'Premium Hair Support Bundle', price:'Bundle', tag:'Premium + products', href:premium.href || productFamily.href, img:productFamily.img || premium.img, desc:'Premium ARIA account status plus the full physical product catalog route.', buy:'Open Premium Bundle', checkoutLinks:[premium.href, productFamily.href].filter(Boolean) },
+      { id:'bundle-pro-hair', title:'Pro Growth + Product Bundle', price:'Bundle', tag:'Pro + products', href:pro.href || productFamily.href, img:pro.img || productFamily.img, desc:'Pro account status with the physical product lane for serious hair support.', buy:'Open Pro Bundle', checkoutLinks:[pro.href, productFamily.href].filter(Boolean) },
+      { id:'bundle-studio-jake-hair', title:'Studio Jake Creator Bundle', price:'Bundle', tag:'Studio + products', href:studio.href || productFamily.href, img:studio.img || productFamily.img, desc:'Studio Jake access, premium FX lane, and the SupportRD product catalog route.', buy:'Open Studio Bundle', checkoutLinks:[studio.href, productFamily.href].filter(Boolean) }
+    ];
+    const all = [...bundles, ...packages, ...products].filter(item=>item && item.id);
+    root.__srCatalogItems = all;
+    return { bundles, all };
+  }
+
+  function cartRows(){
+    const items = cart();
+    if (!items.length) return '<p>Your SupportRD cart is ready. Add products, Premium/Pro, or Studio Jake bundles.</p>';
+    return items.map(item=>`
+      <div class="sr-cart-row" data-cart-row="${esc(item.id)}">
+        <span><strong>${esc(item.title)}</strong><small>${esc(item.tag || item.price || 'SupportRD')}</small></span>
+        <div class="sr-cart-actions">
+          <button class="sr-mini-btn" type="button" data-cart-dec="${esc(item.id)}">-</button>
+          <b>${item.qty || 1}</b>
+          <button class="sr-mini-btn" type="button" data-cart-inc="${esc(item.id)}">+</button>
+          <button class="sr-mini-btn" type="button" data-cart-remove="${esc(item.id)}">Remove</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function cartPanel(){
+    const items = cart();
+    const links = items.flatMap(item=>item.checkoutLinks?.length ? item.checkoutLinks : [item.href]).filter(Boolean);
+    return `<article class="sr-room-card" style="grid-column:1/-1"><h3>SupportRD Cart</h3><div class="sr-output-box sr-cart-box">${cartRows()}</div><div class="sr-room-actions"><button class="sr-buy-btn" type="button" data-cart-checkout="${esc(links[0] || 'https://shop.supportrd.com/products/support-full-product-line')}">Checkout Cart</button><button class="sr-mini-btn" type="button" data-cart-clear>Clear Cart</button><a class="sr-mini-btn" href="https://shop.supportrd.com/collections/all" target="_blank" rel="noopener">Open Full Shop</a></div>${links.length > 1 ? `<div class="sr-output-box"><strong>Bundle checkout links</strong>${links.slice(0,5).map((href,index)=>`<a href="${esc(href)}" target="_blank" rel="noopener">Checkout link ${index + 1}</a>`).join('')}</div>` : ''}</article>`;
+  }
+
+  function ensureCartCss(){
+    if (document.querySelector('#srCatalogCartCss')) return;
+    const style = document.createElement('style');
+    style.id = 'srCatalogCartCss';
+    style.textContent = '.sr-cart-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.6rem;align-items:center;border:1px solid rgba(255,255,255,.12);border-radius:.7rem;padding:.55rem;margin:.45rem 0;background:rgba(255,255,255,.035)}.sr-cart-row strong{display:block}.sr-cart-row small{display:block;color:#aebbd0}.sr-cart-actions{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap}.sr-cart-actions b{min-width:1.5rem;text-align:center}.sr-cart-box p{margin:.25rem 0;color:#cbd5e1}.sr-product-card .sr-room-actions{margin-top:.65rem}';
+    document.head.appendChild(style);
+  }
+
+  function findCatalogItem(id){
+    return (root.__srCatalogItems || []).find(item=>String(item.id) === String(id));
+  }
+
+  function addCartItem(id){
+    const item = findCatalogItem(id);
+    if (!item) return;
+    const items = cart();
+    const existing = items.find(row=>row.id === item.id);
+    if (existing) existing.qty = (existing.qty || 1) + 1;
+    else items.unshift({ id:item.id, title:item.title, tag:item.tag || item.price || 'SupportRD', href:item.href, checkoutLinks:item.checkoutLinks || [], qty:1 });
+    saveCart(items);
+  }
+
+  function updateCartQty(id, delta){
+    const items = cart().map(item=>item.id === id ? { ...item, qty:Math.max(0, (item.qty || 1) + delta) } : item).filter(item=>(item.qty || 0) > 0);
+    saveCart(items);
   }
 
   function renderCatalog(){
     const packages = Array.isArray(root.packages) ? root.packages : [];
     const products = Array.isArray(root.products) ? root.products : [];
+    const catalog = catalogItems(packages, products);
+    ensureCartCss();
     return shell('catalog','CATALOG / PAYMENTS','Have Healthy Hair Catalog',
       'Catalog keeps products, packages, debit/credit checkout, and SupportRD hair solutions on the main domain path.',
-      `<section class="sr-room-grid"><article class="sr-room-card" style="grid-column:1/-1"><h3>Digital Packages</h3><div class="sr-product-grid">${packages.map(productCard).join('') || '<p>Digital package links are loading.</p>'}</div></article><article class="sr-room-card" style="grid-column:1/-1"><h3>Hair Products</h3><div class="sr-product-grid">${products.map(productCard).join('') || '<p>Product links are loading.</p>'}</div></article></section>`,
+      `<section class="sr-room-grid">${cartPanel()}<article class="sr-room-card" style="grid-column:1/-1"><h3>Smart Bundles</h3><div class="sr-product-grid">${catalog.bundles.map(productCard).join('')}</div></article><article class="sr-room-card" style="grid-column:1/-1"><h3>Digital Packages</h3><div class="sr-product-grid">${packages.map(productCard).join('') || '<p>Digital package links are loading.</p>'}</div></article><article class="sr-room-card" style="grid-column:1/-1"><h3>Hair Products</h3><div class="sr-product-grid">${products.map(productCard).join('') || '<p>Product links are loading.</p>'}</div></article></section>`,
       asset('productFamily'));
   }
 
@@ -322,6 +394,41 @@
 
     document.addEventListener('click', async e=>{
       if (handleRouteIntent(e)) return;
+      const addCart = e.target.closest('[data-cart-add]');
+      if (addCart) {
+        e.preventDefault();
+        addCartItem(addCart.dataset.cartAdd);
+        renderPanel('catalog');
+        return;
+      }
+      const incCart = e.target.closest('[data-cart-inc]');
+      if (incCart) {
+        updateCartQty(incCart.dataset.cartInc, 1);
+        renderPanel('catalog');
+        return;
+      }
+      const decCart = e.target.closest('[data-cart-dec]');
+      if (decCart) {
+        updateCartQty(decCart.dataset.cartDec, -1);
+        renderPanel('catalog');
+        return;
+      }
+      const removeCart = e.target.closest('[data-cart-remove]');
+      if (removeCart) {
+        saveCart(cart().filter(item=>item.id !== removeCart.dataset.cartRemove));
+        renderPanel('catalog');
+        return;
+      }
+      if (e.target.closest('[data-cart-clear]')) {
+        saveCart([]);
+        renderPanel('catalog');
+        return;
+      }
+      const checkoutCart = e.target.closest('[data-cart-checkout]');
+      if (checkoutCart) {
+        window.open(checkoutCart.dataset.cartCheckout || 'https://shop.supportrd.com/products/support-full-product-line', '_blank', 'noopener');
+        return;
+      }
       const mapChoice = e.target.closest('[data-map-choice]');
       if (mapChoice) {
         try {

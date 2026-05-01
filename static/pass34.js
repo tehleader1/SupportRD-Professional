@@ -1,5 +1,5 @@
 (()=>{
-  const BUILD = 'support-rd-clean-20260501o';
+  const BUILD = 'support-rd-clean-20260501r';
   const modules = [
     '/static/rebuild/sr-runtime-clean-start.js',
     '/static/rebuild/sr-app-state.js',
