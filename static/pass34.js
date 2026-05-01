@@ -1,10 +1,11 @@
 (()=>{
-  const BUILD = 'support-rd-login-settings-20260501a';
+  const BUILD = 'support-rd-faq-reel-20260501c';
   const modules = [
     '/static/rebuild/sr-app-state.js',
     '/static/rebuild/sr-account-backbone.js',
     '/static/rebuild/sr-login-square.js',
     '/static/rebuild/sr-account-intelligence-settings.js',
+    '/static/rebuild/sr-faq-reel-lounge.js',
     '/static/rebuild/sr-commerce-rank.js',
     '/static/rebuild/sr-real-integrations.js',
     '/static/rebuild/sr-global-tracker.js',
@@ -51,6 +52,7 @@
     root.initAccountBackbone?.();
     root.initLoginSquare?.();
     root.initAccountIntelligenceSettings?.();
+    root.initFaqReelLounge?.();
     root.initCommerceRank?.();
     root.initGlobalTracker?.();
     root.initGlobalSweep?.();
@@ -72,6 +74,5 @@
     })
     .catch(err=>{
       console.error('[SupportRD] runtime load failed', err);
-      document.querySelector('#remoteStage')?.insertAdjacentHTML('afterbegin', '<section class="sr-room-card"><h3>SupportRD runtime needs refresh</h3><p>One of the remote modules did not load. Refresh the page and try again.</p></section>');
     });
 })();
