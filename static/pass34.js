@@ -1,6 +1,7 @@
 (()=>{
-  const BUILD = 'support-rd-faq-reel-20260501c';
+  const BUILD = 'support-rd-clean-20260501d';
   const modules = [
+    '/static/rebuild/sr-runtime-clean-start.js',
     '/static/rebuild/sr-app-state.js',
     '/static/rebuild/sr-account-backbone.js',
     '/static/rebuild/sr-login-square.js',
@@ -28,25 +29,6 @@
     });
   }
 
-  function bindRemoteRoutes(root){
-    if (window.__srRemoteRouteBinderInstalled) return;
-    window.__srRemoteRouteBinderInstalled = true;
-    document.addEventListener('click', event=>{
-      const btn = event.target.closest?.('[data-route]');
-      if (!btn) return;
-      const route = btn.dataset.route;
-      if (!route) return;
-      if (!btn.closest('.sr-page, .sr-remote, .sr-side, .sr-top-ad-strip, .sr-roam-assistant')) return;
-
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      root.renderFunctionalPanel?.(route);
-      if (route === 'aria' || route === 'jake') {
-        root.startAssistantSequence?.(route, !!btn.dataset.handsFree);
-      }
-    }, true);
-  }
-
   function boot(){
     const root = window.SupportRDRebuild || {};
     root.initAccountBackbone?.();
@@ -60,19 +42,16 @@
     root.initStudioMotherboard?.();
     root.initVoiceAssistants?.();
     root.initRemoteGlide?.();
-    bindRemoteRoutes(root);
     const path = String(window.location.pathname || '').toLowerCase();
     root.renderFunctionalPanel?.(path.includes('settings') ? 'settings' : 'diary');
   }
 
-  window.SupportRD34H = window.SupportRD34H || {};
-  window.SupportRD34H.version = BUILD;
   modules.reduce((chain, src)=>chain.then(()=>load(src)), Promise.resolve())
     .then(()=> {
       if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once:true });
       else boot();
     })
     .catch(err=>{
-      console.error('[SupportRD] runtime load failed', err);
+      console.error('[SupportRD CLEAN] runtime load failed', err);
     });
 })();
