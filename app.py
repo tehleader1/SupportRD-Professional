@@ -332,6 +332,8 @@ MAJOR_BANKS = [
 TTS_ALLOWED_VOICES = {"alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer"}
 DIARY_LIVE_EVENTS = {}
 DIARY_ACCOUNT_COMMENTS = {}
+ACCOUNT_EMAIL_CONFIRMATIONS = {}
+PASSWORD_RESET_TOKENS = {}
 PROHIBITED_TERMS = ["drug", "drugs", "cocaine", "meth", "weed", "marijuana", "heroin", "fentanyl", "gang", "gangs", "cartel", "ms-13", "crip", "bloods"]
 COMPETITION_BLOCKED_TOKENS = ["porn", "pornography", "xxx", "sex", "nsfw", "adultvideo"]
 TRADE_BOT_FUNCTIONS = {
@@ -8294,9 +8296,136 @@ def local_remote_preferences_save():
     return {"ok": True, "email": owner_email, "preferences": load_local_remote_preferences(owner_email)}
 
 
+def _account_email_payload():
+    body = request.json if request.is_json else {}
+    email = (body.get("email") or "").strip().lower()
+    display_name = (body.get("display_name") or body.get("name") or "SupportRD Member").strip()[:80]
+    if not email or "@" not in email:
+        return None, None, ({"ok": False, "error": "valid_email_required"}, 400)
+    return email, display_name, None
+
+
+def _send_account_route_email(email, subject, headline, body_text, action_url):
+    html = f"""
+    <div style="font-family:Arial,Helvetica,sans-serif;color:#111;background:#f7fafc;padding:18px;">
+      <div style="max-width:620px;margin:0 auto;background:#fff;border:1px solid #dfe7ef;border-radius:14px;padding:20px;">
+        <h1 style="margin:0 0 10px;font-size:24px;color:#102035;">{escape(headline)}</h1>
+        <p style="line-height:1.5;color:#35465c;">{escape(body_text)}</p>
+        <p><a href="{escape(action_url)}" style="display:inline-block;background:#72f7ff;color:#06101f;font-weight:800;text-decoration:none;border-radius:10px;padding:12px 16px;">Open Confirmation Route</a></p>
+        <p style="font-size:12px;color:#64748b;">If the button does not work, copy this route into your browser:<br>{escape(action_url)}</p>
+      </div>
+    </div>
+    """
+    ok, detail = send_smtp_html(email, subject, html)
+    return bool(ok), detail
+
+
+@app.route("/api/account/email-confirmation", methods=["POST"])
+def account_email_confirmation_request():
+    email, display_name, error = _account_email_payload()
+    if error:
+        return error
+    token = uuid.uuid4().hex
+    ACCOUNT_EMAIL_CONFIRMATIONS[token] = {
+        "email": email,
+        "display_name": display_name,
+        "created_at": datetime.utcnow().isoformat() + "Z",
+        "used": False,
+    }
+    confirmation_url = f"{request.host_url.rstrip('/')}/account/confirm-email/{token}"
+    email_sent, detail = _send_account_route_email(
+        email,
+        "Confirm your SupportRD account",
+        "Confirm your SupportRD account",
+        "Use this route to verify the email account for SupportRD registration.",
+        confirmation_url,
+    )
+    return {
+        "ok": True,
+        "email": email,
+        "display_name": display_name,
+        "email_sent": email_sent,
+        "confirmation_url": confirmation_url,
+        "mail_detail": "" if email_sent else detail,
+    }
+
+
+@app.route("/account/confirm-email/<token>")
+def account_confirm_email(token):
+    row = ACCOUNT_EMAIL_CONFIRMATIONS.get((token or "").strip())
+    if not row:
+        return render_template_string("<h1>SupportRD email confirmation</h1><p>This confirmation route is invalid or expired.</p><p><a href='/'>Return to SupportRD</a></p>"), 404
+    row["used"] = True
+    session["support_rd_email_verified"] = row.get("email")
+    return render_template_string(
+        "<h1>SupportRD email confirmed</h1><p>{{ email }} is verified for registration.</p><p><a href='/'>Return to SupportRD</a></p>",
+        email=row.get("email", ""),
+    )
+
+
+@app.route("/api/account/password-reset/request", methods=["POST"])
+def account_password_reset_request():
+    email, display_name, error = _account_email_payload()
+    if error:
+        return error
+    token = uuid.uuid4().hex
+    PASSWORD_RESET_TOKENS[token] = {
+        "email": email,
+        "display_name": display_name,
+        "created_at": datetime.utcnow().isoformat() + "Z",
+        "used": False,
+    }
+    reset_url = f"{request.host_url.rstrip('/')}/account/reset-password/{token}"
+    email_sent, detail = _send_account_route_email(
+        email,
+        "Reset your SupportRD password",
+        "Reset your SupportRD password",
+        "Use this route to confirm the account email before changing the password.",
+        reset_url,
+    )
+    return {
+        "ok": True,
+        "email": email,
+        "display_name": display_name,
+        "email_sent": email_sent,
+        "reset_url": reset_url,
+        "mail_detail": "" if email_sent else detail,
+    }
+
+
+@app.route("/account/reset-password/<token>")
+def account_reset_password_page(token):
+    row = PASSWORD_RESET_TOKENS.get((token or "").strip())
+    if not row:
+        return render_template_string("<h1>SupportRD password reset</h1><p>This reset route is invalid or expired.</p><p><a href='/'>Return to SupportRD</a></p>"), 404
+    return render_template_string(
+        """
+        <h1>SupportRD password reset confirmed</h1>
+        <p>{{ email }} is confirmed. Return to SupportRD and enter the new password twice in the login panel.</p>
+        <p><a href="/">Return to SupportRD</a></p>
+        """,
+        email=row.get("email", ""),
+    )
+
+
+@app.route("/api/account/password-reset/confirm", methods=["POST"])
+def account_password_reset_confirm():
+    body = request.json if request.is_json else {}
+    token = (body.get("token") or "").strip()
+    password = body.get("password") or ""
+    confirm = body.get("confirm") or body.get("password_confirm") or ""
+    row = PASSWORD_RESET_TOKENS.get(token)
+    if not row:
+        return {"ok": False, "error": "invalid_or_expired_token"}, 404
+    if not password or password != confirm:
+        return {"ok": False, "error": "password_confirmation_required"}, 400
+    row["used"] = True
+    return {"ok": True, "email": row.get("email"), "message": "password_reset_confirmed"}
+
+
 @app.route("/api/local-remote/faq/posts")
 def local_remote_faq_posts():
-    return {"ok": True, "posts": list_faq_developer_posts(limit=request.args.get("limit") or 7)}
+  return {"ok": True, "posts": list_faq_developer_posts(limit=request.args.get("limit") or 7)}
 
 
 @app.route("/api/local-remote/faq/posts", methods=["POST"])

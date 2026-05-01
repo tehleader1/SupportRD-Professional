@@ -363,7 +363,32 @@
         const email = document.querySelector('[data-login-email]')?.value || '';
         const phone = document.querySelector('[data-login-phone]')?.value || '';
         const tier = document.querySelector('[data-login-tier]')?.value || 'Free';
-        localStorage.setItem('srLoginPanelV27', JSON.stringify({ username, email, phone, tier, confirmed:true, at:new Date().toISOString() }));
+        const lowerTier = String(tier).toLowerCase();
+        const membershipPlan = lowerTier.includes('studio') ? 'studio' : lowerTier.includes('pro') ? 'pro' : lowerTier.includes('premium') ? 'premium' : 'free';
+        const premium = /premium|pro|studio/i.test(tier);
+        const pro = /pro|studio/i.test(tier);
+        const login = {
+          username,
+          email,
+          phone,
+          tier,
+          membershipPlan,
+          confirmed:true,
+          emailVerified:!!email,
+          features:{
+            diaryPaidLive:premium,
+            ariaCelebrations:premium,
+            profilePremiumReadings:premium,
+            profileSummaryReadings:premium,
+            studioPremiumFx:pro,
+            studioJake:membershipPlan === 'studio',
+            mapPerksSavedToAccount:premium,
+            faqRealNamePosting:premium
+          },
+          at:new Date().toISOString()
+        };
+        localStorage.setItem('srLoginPanelV27', JSON.stringify(login));
+        try { root.activateLoginFeatures?.(login, false); } catch {}
         try { root.patchAccountBackbone?.('market', { linked:/premium|pro|studio|signals/i.test(tier), paid:/premium|pro|studio|signals/i.test(tier), loginEmail:email }); } catch {}
         renderPanel('settings');
         return;

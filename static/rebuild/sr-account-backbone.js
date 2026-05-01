@@ -7,6 +7,22 @@
     email: 'zzzanthony123@gmail.com',
     tier: 'Premium / Pro',
     confirmed: true,
+    membership: {
+      plan: 'premium',
+      tier: 'Premium / Pro',
+      verifiedEmail: true,
+      paymentLinks: {}
+    },
+    features: {
+      diaryPaidLive: true,
+      ariaCelebrations: true,
+      profilePremiumReadings: true,
+      profileSummaryReadings: true,
+      studioPremiumFx: true,
+      studioJake: true,
+      mapPerksSavedToAccount: true,
+      faqRealNamePosting: true
+    },
     market: {
       linked: false,
       url: 'https://lasersmarket.com/',
@@ -15,11 +31,11 @@
       paid: false,
       loginEmail: ''
     },
-    diary: { assistantHistory: [], livePayments: [], liveRoomEvents: [] },
-    profile: { hairAnalyses: [], confirmedHairStatus: '', profileImages: [] },
-    faq: { developerFeed: [], ratings: [], mentions: [] },
-    mapChange: { recentMap: '', perks: [] },
-    studio: { imports: [], exports: [], jakeHistory: [] },
+    diary: { assistantHistory: [], livePayments: [], liveRoomEvents: [], paidLive: true, ariaCelebrations: true },
+    profile: { hairAnalyses: [], confirmedHairStatus: '', profileImages: [], displayName: 'DYGENRJE', profileQualityOne: '', profileQualityTwo: '', latestProfileImage: '', premiumHistoricalReadings: true, summaryReadings: true },
+    faq: { developerFeed: [], ratings: [], mentions: [], realNamePosting: true, displayName: 'DYGENRJE' },
+    mapChange: { recentMap: '', perks: [], savedToAccount: true, perkCycle: '' },
+    studio: { imports: [], exports: [], jakeHistory: [], premiumFx: true, studioJake: true },
     updatedAt: ''
   };
 
@@ -85,11 +101,16 @@
 
   function recordHairAnalysis(analysis){
     push('profile', 'hairAnalyses', analysis);
-    return patch('profile', { confirmedHairStatus: analysis.status || analysis.summary || 'Hair analysis recorded' });
+    return patch('profile', {
+      confirmedHairStatus: analysis.status || analysis.summary || 'Hair analysis recorded',
+      profileQualityOne: analysis.quality1 || analysis.qualities?.quality1 || '',
+      profileQualityTwo: analysis.quality2 || analysis.qualities?.quality2 || ''
+    });
   }
 
   function recordProfileImage(image){
-    return push('profile', 'profileImages', { image });
+    push('profile', 'profileImages', { image });
+    return patch('profile', { latestProfileImage: image });
   }
 
   function recordDeveloperFeed(item){
@@ -143,18 +164,19 @@
     const target = container || document.querySelector('#srAccountBackbonePanel');
     if (!target) return false;
     const account = read();
+    const verified = account.membership?.verifiedEmail ? 'verified email' : 'email pending';
     target.innerHTML = `
       <div class="sr-account-backbone-head">
         <span>Account Backbone</span>
         <strong>^^ ${esc(account.username || 'DYGENRJE')}</strong>
-        <p>${esc(account.email || '')} · ${esc(account.tier || '')}</p>
+        <p>${esc(account.email || '')} · ${esc(account.tier || '')} · ${verified}</p>
       </div>
       <div class="sr-account-backbone-grid">
-        <article><span>Diary</span><strong>${(account.diary?.assistantHistory || []).length}</strong><small>Aria/Jake history</small><small>${(account.diary?.livePayments || []).length} live payments</small></article>
-        <article><span>Profile</span><strong>${(account.profile?.hairAnalyses || []).length}</strong><small>${esc(account.profile?.confirmedHairStatus || 'No confirmed hair status')}</small></article>
-        <article><span>FAQ</span><strong>${(account.faq?.developerFeed || []).length}</strong><small>${(account.faq?.ratings || []).length} ratings · ${(account.faq?.mentions || []).length} mentions</small></article>
-        <article><span>Map</span><strong>${esc(account.mapChange?.recentMap || 'None')}</strong><small>${(account.mapChange?.perks || []).length} perk events</small></article>
-        <article><span>Studio</span><strong>${(account.studio?.exports || []).length}</strong><small>${(account.studio?.imports || []).length} imports · last 3 exports</small></article>
+        <article><span>Diary</span><strong>${(account.diary?.assistantHistory || []).length}</strong><small>${account.diary?.paidLive ? 'paid live active' : 'free live'}</small><small>${account.diary?.ariaCelebrations ? 'ARIA celebrations active' : 'celebrations locked'}</small></article>
+        <article><span>Profile</span><strong>${(account.profile?.hairAnalyses || []).length}</strong><small>${esc(account.profile?.confirmedHairStatus || 'No confirmed hair status')}</small><small>${esc(account.profile?.profileQualityOne || 'quality 1 pending')} · ${esc(account.profile?.profileQualityTwo || 'quality 2 pending')}</small></article>
+        <article><span>FAQ</span><strong>${(account.faq?.developerFeed || []).length}</strong><small>${(account.faq?.ratings || []).length} ratings · ${(account.faq?.mentions || []).length} mentions</small><small>${account.faq?.realNamePosting ? `real-name posts as ${esc(account.faq?.displayName || account.username)}` : 'guest posting'}</small></article>
+        <article><span>Map</span><strong>${esc(account.mapChange?.recentMap || 'None')}</strong><small>${(account.mapChange?.perks || []).length} perk events</small><small>${account.mapChange?.savedToAccount ? `saved cycle ${esc(account.mapChange?.perkCycle || 'ready')}` : 'not saved yet'}</small></article>
+        <article><span>Studio</span><strong>${(account.studio?.exports || []).length}</strong><small>${(account.studio?.imports || []).length} imports · last 3 exports</small><small>${account.studio?.premiumFx ? 'Premium FX active' : 'Free FX only'}</small></article>
         <article><span>Market</span><strong>${account.market?.linked ? 'linked' : 'not linked'}</strong><small>${account.market?.paid ? '$25,000 live signals active' : '$25,000 live signals pending'}</small></article>
       </div>
     `;
@@ -180,12 +202,21 @@
       account.email = login.email || account.email;
       account.tier = login.tier || account.tier;
       account.confirmed = true;
+      const f = login.features || account.features || {};
+      account.membership = { ...(account.membership || {}), plan: login.membershipPlan || account.membership?.plan || 'free', tier: login.tier || account.tier, verifiedEmail: !!login.emailVerified };
+      account.features = { ...(account.features || {}), ...f };
+      account.diary = { ...(account.diary || {}), paidLive: !!f.diaryPaidLive, ariaCelebrations: !!f.ariaCelebrations };
+      account.profile = { ...(account.profile || {}), displayName: login.username || account.username, premiumHistoricalReadings: !!f.profilePremiumReadings, summaryReadings: !!f.profileSummaryReadings };
+      account.studio = { ...(account.studio || {}), premiumFx: !!f.studioPremiumFx, studioJake: !!f.studioJake };
+      account.mapChange = { ...(account.mapChange || {}), savedToAccount: !!f.mapPerksSavedToAccount, perkCycle: account.mapChange?.perkCycle || new Date().toISOString().slice(0,10) };
+      account.faq = { ...(account.faq || {}), realNamePosting: !!f.faqRealNamePosting, displayName: login.username || account.username };
     }
     write(account);
     injectAccountBackbonePanel();
   }
 
   root.getAccountBackbone = read;
+  root.writeAccountBackbone = write;
   root.patchAccountBackbone = patch;
   root.recordDiaryAssistantHistory = recordDiaryAssistantHistory;
   root.recordLivePayment = recordLivePayment;
