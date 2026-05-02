@@ -3137,7 +3137,7 @@ def save_manual_shopify_sessions_report(report_link="", report_text=""):
     return latest_manual_shopify_sessions_report()
 
 
-def build_shopify_traffic_summary(include_sessions_report=True):
+def build_shopify_traffic_summary(include_sessions_report=False):
     windows = [1, 5, 15, 60, 1440]
     shopify_windows = [_summarize_shopify_window(minutes) for minutes in windows]
     local_windows = [summarize_local_remote_traffic(minutes) for minutes in windows]
@@ -3190,7 +3190,8 @@ def build_shopify_traffic_summary(include_sessions_report=True):
     return {
         "ok": True,
         "updated_at": _local_remote_now(),
-        "source": "shopify_customer_events_shopifyql_sessions_and_supportrd_local",
+        "source": "shopify_customer_events_and_supportrd_local",
+        "reader_mode": "last_known_good_customer_events_2026_05_01_2300",
         "wave_score": wave_score,
         "wave_hot": wave_score >= 42 or bool(five.get("hot") or local_five.get("hot")),
         "shopify": shopify_windows,
@@ -9946,7 +9947,10 @@ def shopify_traffic_pixel():
 
 @app.route("/api/shopify/traffic/summary")
 def shopify_traffic_summary():
-    return _shopify_traffic_json(build_shopify_traffic_summary())
+    include_sessions = str(
+        request.args.get("with_sessions") or request.args.get("sessions") or ""
+    ).lower() in ("1", "true", "yes")
+    return _shopify_traffic_json(build_shopify_traffic_summary(include_sessions_report=include_sessions))
 
 
 @app.route("/api/shopify/traffic/sessions-report")

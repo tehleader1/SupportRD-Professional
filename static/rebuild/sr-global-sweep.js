@@ -1406,15 +1406,16 @@
     const summary = state.trafficSummary || {};
     const shopify = Array.isArray(summary.shopify) ? summary.shopify : [];
     const local = Array.isArray(summary.local) ? summary.local : [];
-    const sessionsReport = summary.sessions_report || {};
+    const sessionsReport = summary.sessions_report || null;
     const manualSessionsReport = summary.manual_sessions_report || {};
     const five = trafficFive(summary);
     const waveScore = Math.max(0, Math.min(100, Number(summary.wave_score || 0)));
     const enabled = trafficPingEnabled();
     const pulse = Math.max(0.18, 1.32 - (waveScore / 100) * 1.02).toFixed(2);
-    const reportSessions = Number(sessionsReport.total_sessions || 0);
-    const reportVisitors = Number(sessionsReport.total_online_store_visitors || 0);
-    const reportHeadline = sessionsReport.configured
+    const showSessionsReport = !!sessionsReport || !!manualSessionsReport.ok;
+    const reportSessions = Number(sessionsReport?.total_sessions || 0);
+    const reportVisitors = Number(sessionsReport?.total_online_store_visitors || 0);
+    const reportHeadline = sessionsReport?.configured
       ? (sessionsReport.ok ? `${reportVisitors || reportSessions} visitors` : 'Scope check')
       : 'Admin token';
     const botReturns = Array.isArray(summary.latest_bot_returns) ? summary.latest_bot_returns : [];
@@ -1458,11 +1459,11 @@
             <strong>${shopify.reduce((sum,item)=>sum + Number(item.events || 0), 0)} events</strong>
             <p>${esc(summary.install_hint || 'Install the custom pixel in Shopify Customer Events.')}</p>
           </article>
-          <article class="sr-traffic-card">
+          ${showSessionsReport ? `<article class="sr-traffic-card">
             <span>Shopify Sessions Report</span>
             <strong>${esc(reportHeadline)}</strong>
-            <p>${sessionsReport.ok ? `${esc(reportSessions)} sessions from private Shopify Analytics.` : esc(sessionsReport.message || 'Needs Shopify Admin API read_reports access.')}</p>
-          </article>
+            <p>${sessionsReport?.ok ? `${esc(reportSessions)} sessions from private Shopify Analytics.` : esc(sessionsReport?.message || 'Needs Shopify Admin API read_reports access.')}</p>
+          </article>` : ''}
         </div>
 
         <div class="sr-traffic-presentation">
@@ -1482,7 +1483,7 @@
           </div>
         </div>
 
-        ${renderShopifySessionsReport(sessionsReport, manualSessionsReport)}
+        ${showSessionsReport ? renderShopifySessionsReport(sessionsReport, manualSessionsReport) : ''}
 
         <details class="sr-traffic-code">
           <summary>Shopify traffic code</summary>
@@ -1664,7 +1665,7 @@
       @keyframes srTrafficBang{0%,100%{transform:scale(.92);box-shadow:0 0 0 0 rgba(255,77,92,.42),0 0 30px rgba(255,77,92,.22)}50%{transform:scale(1.08);box-shadow:0 0 0 .72rem rgba(255,77,92,0),0 0 62px rgba(255,210,122,.38)}}
       .sr-traffic-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:.45rem}
       .sr-traffic-actions button{min-height:2.35rem;padding:.55rem .75rem;border-radius:.7rem;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.07);color:#f7fbff;font-weight:1000;cursor:pointer}
-      .sr-traffic-grid{display:grid;grid-template-columns:1.15fr 1fr 1fr 1fr;gap:.65rem;margin-top:.85rem}
+      .sr-traffic-grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:.65rem;margin-top:.85rem}
       .sr-traffic-card{min-height:7.6rem;padding:.78rem;border-radius:.9rem;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.045)}
       .sr-traffic-card.hero{background:linear-gradient(135deg,rgba(97,239,255,.13),rgba(154,254,143,.08));border-color:rgba(97,239,255,.22)}
       .sr-traffic-card span,.sr-traffic-paths span{display:block;color:#61efff;font-size:.68rem;font-weight:1000;text-transform:uppercase}
@@ -1972,7 +1973,7 @@
     loadGlobalSweep();
     refreshOutreachMovements(false);
     refreshOwnedPosts();
-    refreshTrafficSummary(false);
+    refreshTrafficSummary(trafficPingEnabled());
     if (root.__globalSweepTimer) clearInterval(root.__globalSweepTimer);
     root.__globalSweepTimer = setInterval(loadGlobalSweep, SWEEP_MS);
     if (root.__globalBotLiveTimer) clearInterval(root.__globalBotLiveTimer);
@@ -1984,7 +1985,7 @@
     if (root.__globalOwnedPostsTimer) clearInterval(root.__globalOwnedPostsTimer);
     root.__globalOwnedPostsTimer = setInterval(refreshOwnedPosts, BOT_FETCH_MS);
     if (root.__globalTrafficTimer) clearInterval(root.__globalTrafficTimer);
-    root.__globalTrafficTimer = setInterval(()=>refreshTrafficSummary(false), TRAFFIC_FETCH_MS);
+    root.__globalTrafficTimer = setInterval(()=>refreshTrafficSummary(trafficPingEnabled()), TRAFFIC_FETCH_MS);
   }
 
   root.runGlobalSweep = runGlobalSweep;
