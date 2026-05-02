@@ -20,7 +20,7 @@ ADMIN_TOKEN = (
     or os.environ.get("ADMIN_API_TOKEN")
     or ""
 )
-SUPPORTRD_POSTING_MODE = os.environ.get("SUPPORTRD_POSTING_MODE", "draft_only").strip().lower()
+SUPPORTRD_POSTING_MODE = os.environ.get("SUPPORTRD_POSTING_MODE", "auto_owned").strip().lower()
 OWNED_POSTING_MODES = {
     "owner_approved",
     "owned_approved",
@@ -390,28 +390,45 @@ def copy_for(item):
     }
 
 
+BASE_SCORE_TERMS = [
+    ("salon", 18),
+    ("hair store", 18),
+    ("college", 14),
+    ("career", 14),
+    ("radio", 12),
+    ("newspaper", 12),
+    ("rating", 12),
+    ("keyword", 16),
+    ("google", 10),
+    ("video", 10),
+    ("guest post", 14),
+    ("blog", 14),
+    ("comment", 16),
+    ("family", 13),
+    ("community", 13),
+    ("student", 12),
+]
+
+FOCUS_SCORE_TERMS = [
+    ("comment", 28),
+    ("story", 26),
+    ("family", 26),
+    ("letter", 24),
+    ("post", 18),
+    ("community", 16),
+    ("faq lounge", 16),
+    ("social video", 14),
+]
+
+
 def score(item):
     text = json.dumps(item).lower()
     total = 40
-    for term, points in [
-        ("salon", 18), ("hair store", 18), ("college", 14), ("career", 14),
-        ("radio", 12), ("newspaper", 12), ("rating", 12), ("keyword", 16),
-        ("google", 10), ("video", 10), ("guest post", 14), ("blog", 14),
-        ("comment", 16), ("family", 13), ("community", 13), ("student", 12),
-    ]:
+    for term, points in BASE_SCORE_TERMS:
         if term in text:
             total += points
     if FOCUS_MODE == "comments_story_family":
-        for term, points in [
-            ("comment", 28),
-            ("story", 26),
-            ("family", 26),
-            ("letter", 24),
-            ("post", 18),
-            ("community", 16),
-            ("faq lounge", 16),
-            ("social video", 14),
-        ]:
+        for term, points in FOCUS_SCORE_TERMS:
             if term in text:
                 total += points
         if not is_focus_item(item):
@@ -711,14 +728,78 @@ def placement_lane_for(item):
     return ATTENTION_LANES[0]
 
 
-def attention_score_for(item):
+def attention_route_details_for(item):
+    text = json.dumps(item, sort_keys=True).lower()
     lane = placement_lane_for(item)
-    base = score(item)
+    routes = [
+        {
+            "id": "base",
+            "label": "Base outreach read",
+            "points": 40,
+            "active": True,
+            "detail": "Every queued movement starts with a baseline opportunity score.",
+        }
+    ]
+    for term, points in BASE_SCORE_TERMS:
+        if term in text:
+            routes.append({
+                "id": f"term_{_slug(term)}",
+                "label": f"{term} keyword",
+                "points": points,
+                "active": True,
+                "detail": f"The movement text contains {term}, so it earns route relevance.",
+            })
+    if FOCUS_MODE == "comments_story_family":
+        for term, points in FOCUS_SCORE_TERMS:
+            if term in text:
+                routes.append({
+                    "id": f"focus_{_slug(term)}",
+                    "label": f"focus: {term}",
+                    "points": points,
+                    "active": True,
+                    "detail": "Current bot focus prioritizes comments, stories, family letters, posts, and community-safe movement.",
+                })
+        if not is_focus_item(item):
+            routes.append({
+                "id": "focus_penalty",
+                "label": "not in focus lane",
+                "points": -8,
+                "active": True,
+                "detail": "The item is not part of the current comment/story/family focus, so attention is cooled.",
+            })
     if lane["id"] == "attention_diversity":
-        base += 8
-    if "comment" in json.dumps(item).lower() or "post" in json.dumps(item).lower():
-        base += 5
-    return min(100, max(0, base))
+        routes.append({
+            "id": "attention_diversity_bonus",
+            "label": "attention diversity",
+            "points": 8,
+            "active": True,
+            "detail": "Unique low-competition placements get an extra push when ordinary attention is weak.",
+        })
+    if "comment" in text or "post" in text:
+        routes.append({
+            "id": "comment_post_bonus",
+            "label": "comment/post action",
+            "points": 5,
+            "active": True,
+            "detail": "Comments and posts are closer to public attention than passive research.",
+        })
+    raw_total = sum(int(route["points"]) for route in routes)
+    score_value = min(100, max(0, raw_total))
+    return {
+        "score": score_value,
+        "raw_total": raw_total,
+        "capped": raw_total != score_value,
+        "cap": 100,
+        "status": attention_status(score_value),
+        "lane": lane["label"],
+        "lane_id": lane["id"],
+        "summary": "Attention Core is a capped quality/attention-read score, not a visitor count.",
+        "routes": routes,
+    }
+
+
+def attention_score_for(item):
+    return int(attention_route_details_for(item)["score"])
 
 
 def attention_status(value):
@@ -887,7 +968,8 @@ def normalize_item(item):
 def movement_for(item):
     cat = (item.get("category") or "opportunity").lower()
     lane = placement_lane_for(item)
-    attention = attention_score_for(item)
+    attention_routes = attention_route_details_for(item)
+    attention = int(attention_routes["score"])
     website_target = website_target_for(item, lane)
     if "letter" in cat or "story" in cat:
         movement = "Draft story/family letter/post -> make it human, useful, and permission-based -> queue owner review before any platform action."
@@ -964,6 +1046,7 @@ def movement_for(item):
         "placement_detail": lane["description"],
         "attention_score": attention,
         "attention_status": attention_status(attention),
+        "attention_routes": attention_routes,
         "diversify_when_low": attention < BOT_SETTINGS["attention_low_threshold"],
         "diversity_targets": lane["diversify_targets"],
         "website_target": website_target,

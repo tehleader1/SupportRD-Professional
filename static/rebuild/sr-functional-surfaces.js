@@ -281,7 +281,14 @@
     if (route === 'faq') setTimeout(()=>root.initFaqReelLounge?.(), 50);
     if (route === 'map') setTimeout(()=>root.mapPerks?.renderPerks?.(document.querySelector('#srMapPerksContainer')), 50);
     if (route === 'market') setTimeout(()=>root.marketLaser?.renderStatus?.(document.querySelector('#srMarketStatus')), 50);
-    try { root.bumpCommerceRank?.(route === 'catalog' || route === 'market' || route === 'globaltracker' ? 'makingMoney' : 'professional', 1); } catch {}
+    const moneyRoute = route === 'catalog' ? 'catalog' : route === 'market' ? 'marketFinancial' : route === 'globaltracker' ? 'botOutreach' : '';
+    try {
+      root.bumpCommerceRank?.(route === 'catalog' || route === 'market' || route === 'globaltracker' ? 'makingMoney' : 'professional', 1, {
+        route,
+        source:`functional-${route}`,
+        moneyRoute
+      });
+    } catch {}
   }
 
   function renderPanel(route='diary'){

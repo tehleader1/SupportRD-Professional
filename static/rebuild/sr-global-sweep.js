@@ -1,7 +1,7 @@
 (function(){
   const root = window.SupportRDRebuild = window.SupportRDRebuild || {};
-  const STORE_KEY = 'srGlobalSweepFresh20260502a';
-  const RESET_SENTINEL_KEY = 'srGlobalSweepFresh20260502aDone';
+  const STORE_KEY = 'srGlobalBotFocus20260502b';
+  const RESET_SENTINEL_KEY = 'srGlobalBotFocus20260502bDone';
   const SWEEP_MS = 10 * 60 * 1000;
   const SERVER_STATUS_ENDPOINT = '/api/global-sweep/status';
   const SERVER_RUN_ENDPOINT = '/api/global-sweep/run';
@@ -37,6 +37,7 @@
         'srGlobalSweepV2',
         'srPersonalTracker',
         'srShopifyTracker',
+        'srGlobalSweepFresh20260502a',
         'srTrafficLastAlertAt',
         'srTrafficFirstBotReturnKey',
         'srTrafficClientId'
@@ -630,7 +631,13 @@
     if (serverSweep) {
       const merged = { ...read(), ...serverSweep };
       write(merged);
-      try { root.bumpCommerceRank?.('makingMoney', serverSweep.matchCount || 1); } catch {}
+      try {
+        root.bumpCommerceRank?.('makingMoney', serverSweep.matchCount || 1, {
+          moneyRoute:'botOutreach',
+          source:'server-global-sweep',
+          matches: serverSweep.matchCount || 0
+        });
+      } catch {}
       try { refreshOpportunities(); } catch {}
       try { refreshOutreachMovements(false); } catch {}
       try {
@@ -657,7 +664,13 @@
       serverSweep: false
     };
     write(next);
-    try { root.bumpCommerceRank?.('makingMoney', matches.length || 1); } catch {}
+    try {
+      root.bumpCommerceRank?.('makingMoney', matches.length || 1, {
+        moneyRoute:'botOutreach',
+        source:'local-global-sweep',
+        matches: matches.length || 0
+      });
+    } catch {}
     try { refreshOpportunities(); } catch {}
     try { refreshOutreachMovements(false); } catch {}
     try {
@@ -931,7 +944,7 @@
     return `
       <section class="sr-global-band sr-bot-websites">
         <div class="sr-global-band-head">
-          <span>Live Websites Entering</span>
+          <span>Websites Visited / Entered</span>
           <strong>${esc(current.domain || current.label || 'review target')}</strong>
         </div>
         <div class="sr-bot-site-live">
@@ -1106,6 +1119,95 @@
     `;
   }
 
+  function renderLiveBotChat(state, active){
+    const movements = Array.isArray(state.outreachMovements) ? state.outreachMovements : [];
+    const tick = Number(state.outreachLiveTick || 0);
+    const phaseIndex = Number(state.outreachLivePhase || 0);
+    const phases = executionPhasesFor(active);
+    const phase = phases.length ? phases[phaseIndex % phases.length] : { label:'Plan', status:'Planning next safe movement', detail:'Waiting for queue data.' };
+    const parts = messagePartsFor(active);
+    const part = parts.length ? parts[tick % parts.length] : { label:'Draft', text:active.draft || active.hook || 'Waiting for draft text.' };
+    const placement = placementLaneFor(active);
+    const website = websiteTargetFor(active);
+    const attention = active.attention_routes || {};
+    const messages = [
+      {
+        who:'Bot',
+        role:'planner',
+        title:'Planning',
+        text:`I am selecting ${active.title || active.category || 'the next SupportRD movement'} because it belongs to ${placement.label}.`,
+        meta:`queue ${movements.length} · score ${active.attention_score || active.score || 0}`
+      },
+      {
+        who:'Bot',
+        role:'processor',
+        title:'Processing',
+        text:`Current phase: ${phase.status}. ${phase.detail}`,
+        meta:`phase ${(phaseIndex % Math.max(1, phases.length)) + 1}/${Math.max(1, phases.length)}`
+      },
+      {
+        who:'Bot',
+        role:'writer',
+        title:`Writing ${part.label}`,
+        text:part.text,
+        meta:`draft cursor ${Number(state.outreachDraftCursor || 0)}`
+      },
+      {
+        who:'Route',
+        role:'route',
+        title:'Website lane',
+        text:`Route this through ${website.label || website.domain || 'the review target'} for ${website.purpose || placement.detail}.`,
+        meta:website.tracking_url || 'tracking route pending'
+      },
+      {
+        who:'Guard',
+        role:'guard',
+        title:'Approval check',
+        text:active.approval_boundary || website.permission_note || 'Draft, queue, and review only before any outside platform action.',
+        meta:active.status || 'queued'
+      },
+      {
+        who:'Next',
+        role:'next',
+        title:'Next move',
+        text:active.next_action || 'Keep generating safe queued opportunities and live route details.',
+        meta:`attention ${attention.score || active.attention_score || 0}/100`
+      }
+    ];
+    const current = messages[tick % messages.length];
+    return `
+      <section class="sr-global-band sr-bot-chat-live" aria-live="polite">
+        <div class="sr-bot-chat-head">
+          <div>
+            <span>Live Bot Chat</span>
+            <strong>Planning and processing in real time</strong>
+            <p>Operational chat view of what the backend bot is doing now: planning, drafting, routing, checking approval, and queueing.</p>
+          </div>
+          <div class="sr-bot-chat-status">
+            <b>${esc(current.title)}</b>
+            <small>${esc(new Date(state.outreachUpdatedAt || Date.now()).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', second:'2-digit' }))}</small>
+          </div>
+        </div>
+        <div class="sr-bot-chat-window">
+          ${messages.map((message, index)=>`
+            <article class="${index === tick % messages.length ? 'active' : ''} ${esc(message.role)}">
+              <div>
+                <span>${esc(message.who)}</span>
+                <strong>${esc(message.title)}</strong>
+              </div>
+              <p>${esc(message.text)}</p>
+              <small>${esc(message.meta)}</small>
+            </article>
+          `).join('')}
+        </div>
+        <div class="sr-bot-chat-compose">
+          <b>${esc(current.who)} is typing</b>
+          <span>${esc(current.text).slice(0, Math.min(140, 28 + (tick % 8) * 18))}</span><i></i>
+        </div>
+      </section>
+    `;
+  }
+
   function messagePartsFor(item){
     const placement = placementLaneFor(item);
     const category = String(item.category || 'growth draft').toLowerCase();
@@ -1226,6 +1328,51 @@
     `;
   }
 
+  function renderAttentionScoreDetails(active, stats, activeAttention){
+    const detail = active.attention_routes || active.attentionRoutes || {};
+    const placement = placementLaneFor(active);
+    const routes = Array.isArray(detail.routes) && detail.routes.length
+      ? detail.routes
+      : [
+        { label:'Base outreach read', points:40, detail:'Every queued movement starts with baseline opportunity weight.' },
+        { label:placement.label, points:Math.max(0, Number(activeAttention || 0) - 40), detail:placement.detail || 'Active lane relevance.' }
+      ];
+    const raw = Number(detail.raw_total ?? routes.reduce((sum, route)=>sum + Number(route.points || 0), 0));
+    const score = Number(detail.score ?? activeAttention ?? 0);
+    const status = detail.status || active.attention_status || (score >= 78 ? 'strong_attention' : score >= 62 ? 'warming_attention' : 'low_attention_diversify');
+    const lane = detail.lane || placement.label;
+    const strongest = [...routes].sort((a,b)=>Number(b.points || 0) - Number(a.points || 0)).slice(0,4);
+    return `
+      <div class="sr-bot-attention-detail-board">
+        <div class="sr-bot-attention-detail-head">
+          <div>
+            <span>Attention Core Route Details</span>
+            <strong>${esc(score)} / 100 ${raw > 100 ? `(raw ${esc(raw)} capped)` : ''}</strong>
+            <p>${esc(detail.summary || 'Attention Core is a capped quality/attention-read score, not a visitor count.')}</p>
+          </div>
+          <div>
+            <b>${esc(status.replaceAll('_',' '))}</b>
+            <small>${esc(lane)}</small>
+          </div>
+        </div>
+        <div class="sr-bot-attention-route-grid">
+          ${routes.map(route=>`
+            <article class="${Number(route.points || 0) < 0 ? 'negative' : ''}">
+              <span>${esc(route.label || route.id || 'attention route')}</span>
+              <strong>${Number(route.points || 0) > 0 ? '+' : ''}${esc(route.points || 0)}</strong>
+              <p>${esc(route.detail || 'Score route detail')}</p>
+            </article>
+          `).join('')}
+        </div>
+        <div class="sr-bot-attention-proof-strip">
+          ${strongest.map(route=>`<b>${esc(route.label || 'route')} <em>${Number(route.points || 0) > 0 ? '+' : ''}${esc(route.points || 0)}</em></b>`).join('')}
+          <b>visible lanes <em>${esc(stats.length)}</em></b>
+          <b>active lane <em>${esc(lane)}</em></b>
+        </div>
+      </div>
+    `;
+  }
+
   function renderAttentionDiagram(state, active){
     const movements = Array.isArray(state.outreachMovements) ? state.outreachMovements : [];
     const settings = state.outreachSettings || {};
@@ -1277,6 +1424,7 @@
             `).join('')}
           </div>
         </div>
+        ${renderAttentionScoreDetails(active, stats, activeAttention)}
         <div class="sr-bot-diversify-board">
           <div>
             <span>Low Attention Response</span>
@@ -1440,6 +1588,7 @@
           </div>
           <div class="sr-traffic-actions">
             <button class="sr-buy-btn" type="button" data-traffic-ping>${enabled ? 'Ping Armed' : 'Ping Me On Waves'}</button>
+            <button class="sr-buy-btn" type="button" data-outreach-run>Push Bot Movement</button>
             <button type="button" data-traffic-refresh>Refresh Traffic</button>
             <button type="button" data-copy-shopify-pixel>Copy Shopify Pixel</button>
           </div>
@@ -1511,31 +1660,174 @@
     `;
   }
 
+  function renderVisitorBlockerDiagnosis(state){
+    const summary = state.trafficSummary || {};
+    const movements = Array.isArray(state.outreachMovements) ? state.outreachMovements : [];
+    const settings = state.outreachSettings || {};
+    const botReturns = Number(summary.bot_return_total || 0);
+    const oneDay = (summary.shopify || []).find(row=>Number(row.window_minutes) === 1440) || {};
+    const latestEvents = Array.isArray(summary.latest_events) ? summary.latest_events : [];
+    const queued = movements.filter(item=>String(item.status || 'queued') === 'queued').length;
+    const ownedPosting = Boolean(settings.owned_posting_enabled);
+    const draftOnly = settings.posting_mode === 'draft_only' || settings.draft_mode_only !== false;
+    const blockers = [
+      {
+        label:'No bot-return clicks',
+        value:botReturns,
+        status:botReturns > 0 ? 'ok' : 'blocked',
+        detail:botReturns > 0 ? 'At least one campaign link came back.' : 'No visitor has landed with sr_bot / bot campaign tracking yet.'
+      },
+      {
+        label:'Draft-only mode',
+        value:draftOnly ? 'on' : 'off',
+        status:draftOnly ? 'blocked' : 'ok',
+        detail:draftOnly ? 'The bot is creating drafts and queueing them, but not distributing them.' : 'Owned posting mode is allowed for SupportRD-owned surfaces.'
+      },
+      {
+        label:'Owned posting',
+        value:ownedPosting ? 'enabled' : 'off',
+        status:ownedPosting ? 'ok' : 'blocked',
+        detail:ownedPosting ? 'SupportRD-owned/internal surfaces can receive approved posts.' : 'Even owned SupportRD surfaces are not auto-publishing right now.'
+      },
+      {
+        label:'Queued movement',
+        value:queued,
+        status:queued ? 'watch' : 'blocked',
+        detail:queued ? 'The bot has material, but the material is waiting in queue.' : 'No queued movements are available.'
+      }
+    ];
+    const diagnosis = botReturns > 0
+      ? 'Visitors are starting to return from tracked bot links. Next issue is conversion.'
+      : queued > 0
+        ? 'The bot is producing high-score drafts, but the drafts are not getting placed where people can click.'
+        : 'The bot needs fresh movement before it can generate tracked visitors.';
+    const botVoice = botReturns > 0
+      ? `I brought ${botReturns} tracked visitor${botReturns === 1 ? '' : 's'} back through a bot link. Now I need to tighten the page they landed on and push them toward hair help, product interest, account signup, or checkout.`
+      : queued > 0 && draftOnly
+        ? `I have ${queued} strong drafts ready, but I am still boxed into draft-only mode. I am preparing the routes, the words, and the tracking links, but nobody can click them until they are published, manually posted, or sent through a permitted channel.`
+        : queued > 0
+          ? `I have ${queued} moves queued. My weak spot is not copy quality right now; it is distribution. Give me an owned surface or connected channel and I can turn these drafts into real tracked visits.`
+          : 'I do not have enough fresh movements yet. Push a new wave, then I can build tracked routes and measure who comes back.';
+    return `
+      <section class="sr-global-band sr-visitor-diagnosis">
+        <div class="sr-global-band-head">
+          <span>Why No Visitors Yet</span>
+          <strong>${esc(diagnosis)}</strong>
+        </div>
+        <div class="sr-bot-says">
+          <span>Bot says</span>
+          <p>${esc(botVoice)}</p>
+        </div>
+        <div class="sr-visitor-diagnosis-grid">
+          ${blockers.map(item=>`
+            <article class="${esc(item.status)}">
+              <span>${esc(item.label)}</span>
+              <strong>${esc(item.value)}</strong>
+              <p>${esc(item.detail)}</p>
+            </article>
+          `).join('')}
+        </div>
+        <div class="sr-visitor-fix-route">
+          <div>
+            <span>What The Bot Is Doing Wrong</span>
+            <strong>It is scoring and drafting, not creating real exposure.</strong>
+            <p>Attention Core 100 means the copy is relevant. It does not mean people saw it. Real visitors only happen after a tracked link is posted, shared, submitted, emailed with permission, or published on a SupportRD-owned surface.</p>
+          </div>
+          <ol>
+            <li>Publish the best owned drafts to SupportRD-owned surfaces first: FAQ Lounge, Growth Hub, hair-problems, and product help pages.</li>
+            <li>Use the tracking links already generated in each movement before posting anywhere manually.</li>
+            <li>Connect one permitted external channel at a time instead of letting drafts pile up.</li>
+            <li>Watch for <code>sr_bot=1</code> in Bot Returns; that is the first proof the bot brought somebody back.</li>
+          </ol>
+        </div>
+        <div class="sr-visitor-last-signal">
+          <b>Last 24h reader: ${esc(Number(oneDay.visitors || 0))} visitor / ${esc(Number(oneDay.events || 0))} event</b>
+          <small>${latestEvents.length ? esc(`${latestEvents[0].event_name || 'event'} on ${latestEvents[0].path || '/'}`) : 'No latest traffic event yet.'}</small>
+        </div>
+      </section>
+    `;
+  }
+
+  function readCommerceRankState(){
+    try { return JSON.parse(localStorage.getItem('srCommerceRankState') || '{}'); }
+    catch { return {}; }
+  }
+
+  function renderMoneyIntentReading(state, active){
+    const commerce = readCommerceRankState();
+    const routes = commerce.moneyRoutes || {};
+    const history = Array.isArray(commerce.moneyRouteHistory) ? commerce.moneyRouteHistory.slice(0, 8) : [];
+    const summary = state.trafficSummary || {};
+    const money = Number(commerce.makingMoney || 0);
+    const routeRows = [
+      ['visitor', 'Human Visitor', 'Real visible site movement.'],
+      ['search', 'Search / SEO Entry', 'Hair-problem and search-entry movement.'],
+      ['catalog', 'Catalog Browsing', 'Product catalog interest before checkout.'],
+      ['checkout', 'Checkout Intent', 'Cart, buy, and checkout starts.'],
+      ['premium', 'Premium / Pro Interest', 'Premium, Professional, upgrade, and account tier movement.'],
+      ['studio', 'Studio Jake Interest', 'Studio, FX, export, and Jake movement.'],
+      ['profileScanner', 'Hair Scanner / Profile', 'Hair analysis, scanner, profile, and issue movement.'],
+      ['diaryLive', 'Diary Live', 'Live/backlink and paid stream movement.'],
+      ['botOutreach', 'Bot Outreach Route', 'Globaltracker, story, family, college, career, and comment route movement.'],
+      ['repeatAccount', 'Repeat Account', 'Returning account and saved identity movement.'],
+      ['marketFinancial', 'Financial / Market', 'Financial reader and Lasersmarket movement.'],
+      ['confirmedMoney', 'Confirmed Money', 'Paid order, webhook, or verified purchase confirmation.']
+    ];
+    const tracked = routeRows.reduce((sum, [key])=>sum + Number(routes[key] || 0), 0);
+    const legacy = Math.max(0, money - tracked);
+    const botReturns = Number(summary.bot_return_total || 0);
+    const oneDay = (summary.shopify || []).find(row=>Number(row.window_minutes) === 1440) || {};
+    const activeSite = websiteTargetFor(active);
+    return `
+      <section class="sr-global-band sr-money-live-reading">
+        <div class="sr-global-band-head">
+          <span>#1 Making Money Updated Reading</span>
+          <strong>${esc(money)} Commercial Intent Momentum</strong>
+        </div>
+        <div class="sr-money-live-grid">
+          <article class="hero">
+            <span>Exact Synonym</span>
+            <strong>Commercial Intent Momentum</strong>
+            <p>This score rises when the site sees buyer-like movement: product routes, checkout intent, premium/pro interest, Studio Jake interest, hair scanner/profile movement, bot outreach routing, repeat accounts, market routes, and confirmed purchases.</p>
+          </article>
+          <article>
+            <span>People Proof</span>
+            <strong>${esc(botReturns)} bot returns</strong>
+            <p>${esc(Number(oneDay.visitors || 0))} visitor / ${esc(Number(oneDay.events || 0))} event in the 24 hour traffic reader. This is the real proof lane; the money score by itself is intent momentum, not a guaranteed person.</p>
+          </article>
+          <article>
+            <span>Active Route Feeding It</span>
+            <strong>${esc(activeSite.domain || activeSite.label || 'supportRD route')}</strong>
+            <p>${esc(active.title || active.category || 'Current backend bot movement')} is currently being used as the bot outreach source.</p>
+          </article>
+        </div>
+        <div class="sr-money-live-routes">
+          ${routeRows.map(([key, label, hint])=>`
+            <article class="${Number(routes[key] || 0) > 0 ? 'active' : ''}">
+              <span>${esc(label)}</span>
+              <strong>${esc(Number(routes[key] || 0))}</strong>
+              <p>${esc(hint)}</p>
+            </article>
+          `).join('')}
+          <article class="${legacy > 0 ? 'active legacy' : 'legacy'}">
+            <span>Legacy Mixed</span>
+            <strong>${esc(legacy)}</strong>
+            <p>Older blended climb before exact routing was added.</p>
+          </article>
+        </div>
+        <div class="sr-money-live-history">
+          <span>Latest Score Movements</span>
+          ${history.map(item=>`<b>${esc(item.label || item.route || 'route')} <em>+${esc(item.amount || 0)} · ${esc(item.source || 'source')}</em></b>`).join('') || '<b>No route history yet <em>waiting</em></b>'}
+        </div>
+      </section>
+    `;
+  }
+
   function renderBotOnlyMarkup(){
     const state = read();
-    const movements = Array.isArray(state.outreachMovements) ? state.outreachMovements : [];
-    const summary = state.outreachSummary || {};
     const active = currentMovement(state);
     return `
       <section class="sr-global-tracker sr-bot-console" data-panel="globaltracker" data-outreach-movements>
-        <header class="sr-global-hero sr-bot-hero">
-          <span>SupportRD Backend Bot</span>
-          <h2>Growth command center</h2>
-          <p>Live queue for blog requests, salon outreach, hair-store pitches, radio shoutouts, creator ideas, student ads, review/rating pitches, and safe social/story drafts. The bot drafts and queues only; owner approval is required before anything leaves SupportRD.</p>
-          <div class="sr-global-actions">
-            <button class="sr-buy-btn" type="button" data-outreach-run>Push Bot Movement</button>
-            <span class="sr-global-stamp">${state.outreachUpdatedAt ? new Date(state.outreachUpdatedAt).toLocaleString() : 'Waiting for movement report'}</span>
-            <strong class="sr-bot-pill">${esc(summary.count || movements.length)} queued moves</strong>
-            <strong class="sr-bot-live-dot">Live auto-refresh</strong>
-          </div>
-        </header>
-
-        ${renderLiveFocusResults(state, active)}
-
-        ${renderSmartFollowupPanel(state, active)}
-
-        ${renderOwnedPostingPanel(state, active)}
-
         ${renderTrafficPingPanel(state)}
 
         ${renderWebsiteEntryBoard(state, active)}
@@ -1544,57 +1836,7 @@
 
         ${renderAttentionDiagram(state, active)}
 
-        ${renderExecutionTrace(state, active)}
-
-        <section class="sr-bot-live-grid">
-          <article class="sr-global-band sr-bot-code">
-            <div class="sr-global-band-head">
-              <span>Live Bot Code</span>
-              <strong>${esc(active.status || 'queued')}</strong>
-            </div>
-            <p class="sr-global-note">This is the command package the backend bot is preparing right now.</p>
-            <pre>${esc(botCommandFor(active, state))}</pre>
-          </article>
-
-          <article class="sr-global-band sr-bot-data">
-            <div class="sr-global-band-head">
-              <span>Live Data Presentation</span>
-              <strong>${esc(active.category || 'movement')}</strong>
-            </div>
-            ${renderDataDeck(state, active)}
-          </article>
-
-          <article class="sr-global-band sr-bot-page">
-            <div class="sr-global-band-head">
-              <span>Live Page View</span>
-              <strong>SupportRD preview</strong>
-            </div>
-            <div class="sr-bot-preview-card">
-              <span>${esc(active.category || 'movement')}</span>
-              <strong>${esc(active.title || 'SupportRD growth move')}</strong>
-              <p>${esc(active.draft || active.movement || 'SupportRD growth draft is loading.')}</p>
-              <a href="/" target="_blank" rel="noopener">Open page</a>
-            </div>
-            <iframe class="sr-bot-live-frame" src="/?_globalBotPreview=1" title="SupportRD live page preview" loading="lazy"></iframe>
-          </article>
-        </section>
-
-        <section class="sr-global-band sr-bot-queue">
-          <div class="sr-global-band-head">
-            <span>Movement Queue</span>
-            <strong>${esc(movements.length)} loaded</strong>
-          </div>
-          <div class="sr-global-grid compact">
-          ${movements.map(item=>`
-            <article class="sr-global-card">
-              <span>${esc(item.category)} · ${esc(item.status)}</span>
-              <strong>${esc(item.title)}</strong>
-              <p>${esc(item.movement)}</p>
-              <small>${esc(item.next_action)}</small>
-            </article>
-          `).join('') || '<article class="sr-global-card"><span>Bot warming up</span><strong>No outreach movements loaded</strong><p>Press Push Bot Movement to generate the next safe request wave.</p></article>'}
-          </div>
-        </section>
+        ${renderMoneyIntentReading(state, active)}
       </section>
     `;
   }
@@ -1623,6 +1865,20 @@
       .sr-bot-live-dot{display:inline-flex;align-items:center;gap:.45rem;min-height:2.15rem;padding:.45rem .8rem;border:1px solid rgba(154,254,143,.28);border-radius:999px;background:rgba(154,254,143,.1);color:#eaffdf;font-size:.78rem;text-transform:uppercase;letter-spacing:.04em}
       .sr-bot-live-dot:before{content:"";width:.55rem;height:.55rem;border-radius:999px;background:#9afe8f;box-shadow:0 0 0 0 rgba(154,254,143,.55);animation:srBotPulse 1.25s infinite}
       @keyframes srBotPulse{70%{box-shadow:0 0 0 .45rem rgba(154,254,143,0)}100%{box-shadow:0 0 0 0 rgba(154,254,143,0)}}
+      .sr-money-live-reading{border-color:rgba(255,210,122,.24);background:radial-gradient(circle at 6% 6%,rgba(255,210,122,.15),transparent 18rem),linear-gradient(135deg,rgba(4,10,22,.96),rgba(23,19,8,.88))}
+      .sr-money-live-grid{display:grid;grid-template-columns:1.15fr .85fr .85fr;gap:.7rem;margin-bottom:.75rem}
+      .sr-money-live-grid article,.sr-money-live-routes article{padding:.75rem;border:1px solid rgba(255,255,255,.1);border-radius:.85rem;background:rgba(255,255,255,.045)}
+      .sr-money-live-grid article.hero{border-color:rgba(255,210,122,.25);background:rgba(255,210,122,.08)}
+      .sr-money-live-grid span,.sr-money-live-routes span,.sr-money-live-history span{display:block;color:#ffdf8d;font-size:.7rem;font-weight:1000;text-transform:uppercase;letter-spacing:.06em}
+      .sr-money-live-grid strong{display:block;margin:.25rem 0;color:#fff;font-size:1.28rem;line-height:1.08}
+      .sr-money-live-grid p,.sr-money-live-routes p{color:rgba(247,251,255,.72);line-height:1.36}
+      .sr-money-live-routes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.45rem}
+      .sr-money-live-routes article.active{border-color:rgba(154,254,143,.28);background:rgba(154,254,143,.08)}
+      .sr-money-live-routes article.legacy{border-color:rgba(97,239,255,.14)}
+      .sr-money-live-routes strong{display:block;margin:.18rem 0;color:#fff;font-size:1.05rem}
+      .sr-money-live-history{margin-top:.75rem;padding:.7rem;border-radius:.85rem;border:1px solid rgba(255,210,122,.16);background:rgba(0,0,0,.2)}
+      .sr-money-live-history b{display:flex;justify-content:space-between;gap:.5rem;margin-top:.35rem;padding:.45rem .55rem;border-radius:.55rem;background:rgba(255,255,255,.045);color:#fff;font-size:.78rem}
+      .sr-money-live-history em{color:#9ff9ff;font-style:normal}
       .sr-bot-focus-live,.sr-bot-followups{position:relative;overflow:hidden;border-color:rgba(154,254,143,.28);background:radial-gradient(circle at 8% 0%,rgba(154,254,143,.15),transparent 24rem),linear-gradient(135deg,rgba(4,10,22,.96),rgba(9,24,38,.9));box-shadow:0 24px 70px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.08)}
       .sr-bot-focus-live:before,.sr-bot-followups:before{content:"";position:absolute;left:-20%;right:-20%;top:0;height:2px;background:linear-gradient(90deg,transparent,#61efff,#9afe8f,#ffd27a,transparent);animation:srBotRail 2.2s linear infinite}
       .sr-bot-focus-head,.sr-bot-followup-head{position:relative;z-index:1;display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;margin-bottom:.85rem}
@@ -1722,6 +1978,26 @@
       .sr-traffic-feed span{display:block;color:#61efff;font-size:.64rem;font-weight:1000;text-transform:uppercase}
       .sr-traffic-feed strong{display:block;margin:.25rem 0;color:#fff;font-size:.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
       .sr-traffic-feed p{color:rgba(247,251,255,.68);font-size:.72rem;line-height:1.28}
+      .sr-visitor-diagnosis{border-color:rgba(255,210,122,.24);background:linear-gradient(135deg,rgba(255,210,122,.09),rgba(5,12,25,.92))}
+      .sr-bot-says{margin:.75rem 0;padding:.85rem 1rem;border-radius:.95rem;border:1px solid rgba(154,254,143,.28);background:linear-gradient(135deg,rgba(154,254,143,.13),rgba(97,239,255,.07));box-shadow:inset 0 0 28px rgba(154,254,143,.05)}
+      .sr-bot-says span{display:block;color:#9afe8f;font-size:.72rem;font-weight:1000;text-transform:uppercase;letter-spacing:.1em}
+      .sr-bot-says p{margin:.35rem 0 0;color:#f7fbff;font-size:1.02rem;line-height:1.42;font-weight:800}
+      .sr-visitor-diagnosis-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.55rem}
+      .sr-visitor-diagnosis-grid article{padding:.75rem;border-radius:.82rem;border:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.22)}
+      .sr-visitor-diagnosis-grid article.blocked{border-color:rgba(255,110,110,.32);background:rgba(255,80,80,.08)}
+      .sr-visitor-diagnosis-grid article.ok{border-color:rgba(154,254,143,.3);background:rgba(154,254,143,.08)}
+      .sr-visitor-diagnosis-grid article.watch{border-color:rgba(255,210,122,.28);background:rgba(255,210,122,.07)}
+      .sr-visitor-diagnosis-grid span{display:block;color:#ffcf74;font-size:.68rem;font-weight:1000;text-transform:uppercase}
+      .sr-visitor-diagnosis-grid strong{display:block;margin:.25rem 0;color:#fff;font-size:1.35rem;line-height:1}
+      .sr-visitor-diagnosis-grid p{color:rgba(247,251,255,.72);font-size:.76rem;line-height:1.3}
+      .sr-visitor-fix-route{display:grid;grid-template-columns:minmax(14rem,.45fr) minmax(0,1fr);gap:.75rem;margin-top:.75rem;padding:.85rem;border-radius:.9rem;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.045)}
+      .sr-visitor-fix-route span{color:#61efff;font-size:.7rem;font-weight:1000;text-transform:uppercase}
+      .sr-visitor-fix-route strong{display:block;margin:.2rem 0;color:#fff;font-size:1.06rem}
+      .sr-visitor-fix-route p,.sr-visitor-fix-route li{color:rgba(247,251,255,.73);line-height:1.35}
+      .sr-visitor-fix-route ol{margin:.1rem 0 0;padding-left:1.2rem}
+      .sr-visitor-fix-route code{color:#9afe8f}
+      .sr-visitor-last-signal{display:flex;justify-content:space-between;gap:.75rem;margin-top:.65rem;padding:.58rem .7rem;border-radius:.72rem;background:rgba(0,0,0,.2);color:#dffbff}
+      .sr-visitor-last-signal small{color:rgba(247,251,255,.68)}
       .sr-bot-websites{position:relative;overflow:hidden;border-color:rgba(97,239,255,.22);background:radial-gradient(circle at 100% 0%,rgba(97,239,255,.12),transparent 24rem),linear-gradient(135deg,rgba(4,10,22,.96),rgba(14,22,38,.9))}
       .sr-bot-site-live{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.75rem;align-items:center;margin-top:.7rem;padding:.85rem;border-radius:.95rem;border:1px solid rgba(154,254,143,.22);background:linear-gradient(135deg,rgba(154,254,143,.11),rgba(97,239,255,.06))}
       .sr-bot-site-live span,.sr-bot-site-grid span{display:block;color:#61efff;font-size:.68rem;font-weight:1000;text-transform:uppercase}
@@ -1789,6 +2065,22 @@
       .sr-bot-attention-spokes .low .sr-bot-attention-meter i{background:linear-gradient(90deg,#ffd27a,#ff9f6e)}
       .sr-bot-attention-meter em{position:absolute;inset:0;display:grid;place-items:center;color:#06101f;font-size:.58rem;font-style:normal;font-weight:1000}
       .sr-bot-attention-spokes small{color:rgba(247,251,255,.62);font-size:.68rem}
+      .sr-bot-attention-detail-board{margin-top:.85rem;padding:.85rem;border-radius:.95rem;border:1px solid rgba(97,239,255,.2);background:linear-gradient(135deg,rgba(97,239,255,.08),rgba(0,0,0,.18));box-shadow:inset 0 0 30px rgba(97,239,255,.04)}
+      .sr-bot-attention-detail-head{display:grid;grid-template-columns:minmax(0,1fr) minmax(10rem,.28fr);gap:.75rem;align-items:start}
+      .sr-bot-attention-detail-head span{color:#61efff;font-size:.7rem;font-weight:1000;text-transform:uppercase}
+      .sr-bot-attention-detail-head strong{display:block;margin:.18rem 0;color:#fff;font-size:1.12rem}
+      .sr-bot-attention-detail-head p{color:rgba(247,251,255,.72);line-height:1.35}
+      .sr-bot-attention-detail-head b{display:block;padding:.55rem .65rem;border-radius:.72rem;background:#9afe8f;color:#07101d;text-transform:capitalize;text-align:center;font-size:.8rem}
+      .sr-bot-attention-detail-head small{display:block;margin-top:.35rem;color:#dffbff;text-align:center;line-height:1.25}
+      .sr-bot-attention-route-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.45rem;margin-top:.7rem;max-height:18rem;overflow:auto;padding-right:.12rem}
+      .sr-bot-attention-route-grid article{min-height:7.1rem;padding:.58rem;border-radius:.72rem;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.045)}
+      .sr-bot-attention-route-grid article.negative{border-color:rgba(255,155,120,.22);background:rgba(255,155,120,.08)}
+      .sr-bot-attention-route-grid span{display:block;color:#61efff;font-size:.62rem;font-weight:1000;text-transform:uppercase;line-height:1.15}
+      .sr-bot-attention-route-grid strong{display:block;margin:.2rem 0;color:#fff;font-size:1.05rem}
+      .sr-bot-attention-route-grid p{color:rgba(247,251,255,.68);font-size:.7rem;line-height:1.25}
+      .sr-bot-attention-proof-strip{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.7rem}
+      .sr-bot-attention-proof-strip b{padding:.4rem .55rem;border-radius:999px;border:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.2);color:#fff;font-size:.72rem}
+      .sr-bot-attention-proof-strip em{color:#9afe8f;font-style:normal}
       .sr-bot-diversify-board{display:grid;grid-template-columns:minmax(14rem,.38fr) minmax(0,1fr);gap:.75rem;margin-top:.85rem;padding:.85rem;border-radius:.95rem;border:1px solid rgba(255,210,122,.18);background:rgba(255,210,122,.06)}
       .sr-bot-diversify-board span{color:#ffd27a;font-size:.7rem;font-weight:1000;text-transform:uppercase}
       .sr-bot-diversify-board strong{display:block;margin:.2rem 0;color:#fff;font-size:1.05rem}
@@ -1879,7 +2171,7 @@
       .sr-bot-owned-list p{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;margin:.25rem 0;color:rgba(247,251,255,.75);font-size:.75rem}
       .sr-bot-queue .sr-global-grid{max-height:32rem;overflow:auto;padding-right:.15rem}
       .sr-bot-queue small{display:block;margin-top:.5rem;color:#9ff9ff;line-height:1.35}
-      @media(max-width:1120px){.sr-bot-live-grid,.sr-bot-owned-grid,.sr-bot-exec-main,.sr-bot-builder-grid,.sr-bot-placement,.sr-bot-attention-map,.sr-bot-diversify-board,.sr-traffic-head,.sr-traffic-grid,.sr-traffic-presentation,.sr-traffic-report,.sr-traffic-manual,.sr-bot-site-live{grid-template-columns:1fr}.sr-traffic-actions{justify-content:flex-start}.sr-bot-builder-head{display:grid}.sr-bot-builder-meter{justify-items:start}.sr-bot-orbit{margin:auto}.sr-bot-live-frame{height:22rem}.sr-bot-pipeline{grid-template-columns:repeat(2,minmax(0,1fr))}.sr-bot-phase-rail,.sr-bot-placement-grid,.sr-bot-attention-spokes,.sr-bot-diversify-targets,.sr-traffic-feed,.sr-bot-site-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.sr-traffic-windows{grid-template-columns:repeat(3,minmax(0,1fr))}.sr-traffic-report-chart{grid-template-columns:repeat(4,minmax(0,1fr))}}
+      @media(max-width:1120px){.sr-bot-live-grid,.sr-bot-owned-grid,.sr-bot-exec-main,.sr-bot-builder-grid,.sr-bot-placement,.sr-bot-attention-map,.sr-bot-diversify-board,.sr-bot-attention-detail-head,.sr-visitor-fix-route,.sr-traffic-head,.sr-traffic-grid,.sr-traffic-presentation,.sr-traffic-report,.sr-traffic-manual,.sr-bot-site-live,.sr-money-live-grid{grid-template-columns:1fr}.sr-traffic-actions{justify-content:flex-start}.sr-bot-builder-head{display:grid}.sr-bot-builder-meter{justify-items:start}.sr-bot-orbit{margin:auto}.sr-bot-live-frame{height:22rem}.sr-bot-pipeline{grid-template-columns:repeat(2,minmax(0,1fr))}.sr-bot-phase-rail,.sr-bot-placement-grid,.sr-bot-attention-spokes,.sr-bot-diversify-targets,.sr-traffic-feed,.sr-bot-site-grid,.sr-bot-attention-route-grid,.sr-visitor-diagnosis-grid,.sr-money-live-routes{grid-template-columns:repeat(2,minmax(0,1fr))}.sr-traffic-windows{grid-template-columns:repeat(3,minmax(0,1fr))}.sr-traffic-report-chart{grid-template-columns:repeat(4,minmax(0,1fr))}}
     `;
     document.head.appendChild(style);
   }

@@ -165,10 +165,95 @@
   function saveState(state){
     localStorage.setItem('srCommerceRankState', JSON.stringify(state || {}));
   }
-  function bump(kind, amount){
+
+  const MONEY_ROUTES = {
+    visitor: { label:'Human Visitor', hint:'Real page movement, route opens, and visible site use.' },
+    search: { label:'Search / SEO Entry', hint:'Hair-problem, search-entry, and SEO landing movement.' },
+    catalog: { label:'Catalog Browsing', hint:'Product catalog opens and product interest before checkout.' },
+    checkout: { label:'Checkout / Cart', hint:'Buy buttons, cart movement, checkout path, and payment intent.' },
+    premium: { label:'Premium / Pro', hint:'Premium, Professional, Inner Circle, and upgrade intent.' },
+    studio: { label:'Studio Jake', hint:'Studio Jake package, studio creation, FX, and export interest.' },
+    profileScanner: { label:'Hair Scanner / Profile', hint:'Profile, hair analysis, scanner, and ARIA hair-summary intent.' },
+    diaryLive: { label:'Diary Live / Community', hint:'Diary live, comments, community, and support movement.' },
+    botOutreach: { label:'Bot Outreach / Comments', hint:'Global sweep, outreach queues, comments, stories, blogs, salons, colleges, and career placements.' },
+    repeatAccount: { label:'Repeat / Account', hint:'Login, settings, saved account movement, returning-user behavior.' },
+    marketFinancial: { label:'Financial / Laser', hint:'Financial remote, LasersMarket, market reader, and signal-reader movement.' },
+    confirmedMoney: { label:'Confirmed Money', hint:'Only paid order, webhook, or verified purchase confirmation.' },
+    legacyMixed: { label:'Legacy Mixed', hint:'Older score points from before exact route tracking was added.' }
+  };
+
+  function normalizeMoneyRoutes(state){
+    const routes = {};
+    Object.keys(MONEY_ROUTES).forEach((key)=>{
+      routes[key] = Number(state.moneyRoutes?.[key] || 0);
+    });
+    return routes;
+  }
+
+  function classifyMoneyRoute(kind, meta = {}){
+    if (kind !== 'makingMoney') return '';
+    if (MONEY_ROUTES[meta.moneyRoute]) return meta.moneyRoute;
+    const source = String([meta.source, meta.route, meta.action, meta.id].filter(Boolean).join(' ')).toLowerCase();
+    if (source.includes('order') || source.includes('webhook') || source.includes('paid') || source.includes('verified-purchase')) return 'confirmedMoney';
+    if (source.includes('sweep') || source.includes('bot') || source.includes('outreach') || source.includes('globaltracker') || source.includes('blog') || source.includes('salon') || source.includes('college') || source.includes('career') || source.includes('family') || source.includes('story')) return 'botOutreach';
+    if (source.includes('checkout') || source.includes('cart') || source.includes('buy')) return 'checkout';
+    if (source.includes('premium') || source.includes('professional-tier') || source.includes('pro-making-money') || source.includes('inner-circle') || source.includes('inner') || source.includes('upgrade')) return 'premium';
+    if (source.includes('studio') || source.includes('jake') || source.includes('fx') || source.includes('export')) return 'studio';
+    if (source.includes('search') || source.includes('seo') || source.includes('hair-problems')) return 'search';
+    if (source.includes('profile') || source.includes('scanner') || source.includes('scan') || source.includes('analysis') || source.includes('hair')) return 'profileScanner';
+    if (source.includes('diary') || source.includes('live') || source.includes('comment') || source.includes('community')) return 'diaryLive';
+    if (source.includes('catalog') || source.includes('product') || source.includes('bright') || source.includes('formula') || source.includes('lacceador') || source.includes('shampoo') || source.includes('mask')) return 'catalog';
+    if (source.includes('market') || source.includes('financial') || source.includes('laser')) return 'marketFinancial';
+    if (source.includes('login') || source.includes('account') || source.includes('settings') || source.includes('return')) return 'repeatAccount';
+    return 'visitor';
+  }
+
+  function trackMoneyRoute(state, kind, amount, meta = {}){
+    const route = classifyMoneyRoute(kind, meta);
+    if (!route) return state;
+    const routes = normalizeMoneyRoutes(state);
+    routes[route] = Number(routes[route] || 0) + Number(amount || 1);
+    state.moneyRoutes = routes;
+    state.moneyRouteHistory = [{
+      route,
+      label: MONEY_ROUTES[route].label,
+      amount: Number(amount || 1),
+      source: meta.source || meta.route || meta.action || 'commerce-rank',
+      at: new Date().toISOString()
+    }, ...(state.moneyRouteHistory || [])].slice(0, 150);
+    return state;
+  }
+
+  function renderMoneyRouteMap(state, money){
+    const routes = normalizeMoneyRoutes(state);
+    const tracked = Object.entries(routes)
+      .filter(([key])=>key !== 'legacyMixed')
+      .reduce((sum, [, value])=>sum + Number(value || 0), 0);
+    routes.legacyMixed = Math.max(0, Number(money || 0) - tracked);
+    return `
+      <div class="sr-money-route-map" aria-label="Money intent route map">
+        ${Object.entries(MONEY_ROUTES).map(([key, item])=>`
+          <div class="sr-money-route" title="${item.hint}">
+            <span>${item.label}</span>
+            <strong>${Number(routes[key] || 0)}</strong>
+          </div>
+        `).join('')}
+      </div>
+      <small class="sr-money-note">Synonym: Commercial Intent Momentum. New movement is routed live; legacy is the older blended climb.</small>
+    `;
+  }
+
+  function bump(kind, amount, meta = {}){
     const state = getState();
     state[kind] = Number(state[kind] || 0) + Number(amount || 1);
-    state.history = [{kind, amount, at:new Date().toISOString()}, ...(state.history || [])].slice(0,50);
+    trackMoneyRoute(state, kind, amount, meta);
+    state.history = [{
+      kind,
+      amount,
+      moneyRoute: classifyMoneyRoute(kind, meta),
+      source: meta.source || meta.route || meta.action || '',
+      at:new Date().toISOString()
+    }, ...(state.history || [])].slice(0,50);
     saveState(state);
     renderRankStrip();
     return state;
@@ -265,7 +350,11 @@
         </div>
       </section>
     `;
-    bump(route === 'catalog' ? 'makingMoney' : 'professional', 1);
+    bump(route === 'catalog' ? 'makingMoney' : 'professional', 1, {
+      route,
+      source: `${route}-panel-render`,
+      moneyRoute: route === 'catalog' ? 'catalog' : ''
+    });
   }
 
   function renderRankStrip(){
@@ -278,7 +367,7 @@
     const shopify = state.shopify || {status:'watch', balance:'Verify live'};
     el.innerHTML = `
       <article><span>#1 Professional</span><strong>${pro}</strong><small>ARIA rank contact score</small></article>
-      <article><span>#1 Making Money</span><strong>${money}</strong><small>Catalog/payment seriousness</small></article>
+      <article class="sr-money-intent-card"><span>Money Intent Momentum</span><strong>${money}</strong><small>Commercial attention rank</small>${renderMoneyRouteMap(state, money)}</article>
       <article><span>Seriousness</span><strong>${serious}</strong><small>Admin visible usage signal</small></article>
       <article><span>Shopify</span><strong>${shopify.status || 'watch'}</strong><small>${shopify.balance || 'Verify endpoint'}</small></article>
     `;
@@ -293,7 +382,10 @@
       }
       const buy = event.target.closest('[data-buy], [data-product]');
       if (buy) {
-        bump('makingMoney', 5);
+        bump('makingMoney', 5, {
+          source: buy.dataset.buy || buy.dataset.product || 'buy-click',
+          action:'product-intent'
+        });
         renderPanel('catalog');
         return;
       }
