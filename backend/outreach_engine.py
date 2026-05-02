@@ -886,16 +886,22 @@ def website_target_for(item, lane=None):
     index = sum(ord(ch) for ch in basis) % len(targets)
     target = dict(targets[index])
     campaign = _slug(f"{lane_id}-{item.get('title') or item.get('category')}")
+    domain = str(target.get("domain") or "").lower()
+    owned_surface = domain == "supportrd.com" or domain.endswith(".supportrd.com")
     target.update({
         "lane_id": lane_id,
         "lane": lane.get("label", "Career comment/post"),
-        "status": "queued_for_owner_review",
-        "action": "open_review_target",
+        "status": "owned_surface_live" if owned_surface else "queued_for_owner_review",
+        "action": "open_owned_surface" if owned_surface else "open_review_target",
         "tracking_url": comment_funnel_url(campaign, lane_id),
         "conversion_route": "hair_problem_intake",
         "conversion_goal": "hair issue, product interest, account signup, or catalog checkout",
         "campaign": campaign,
-        "permission_note": "Research/draft target only. The bot does not post, comment, email, submit, or use accounts without owner approval.",
+        "permission_note": (
+            "SupportRD-owned/internal surface. In auto-owned mode, the bot can publish internally here."
+            if owned_surface else
+            "Research/draft target only. The bot does not post, comment, email, submit, or use accounts without owner approval."
+        ),
     })
     return target
 

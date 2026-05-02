@@ -933,6 +933,15 @@
     };
   }
 
+  function isOwnedSupportRDSurface(site){
+    const domain = String(site?.domain || '').toLowerCase();
+    const url = String(site?.url || '').toLowerCase();
+    return domain === 'supportrd.com'
+      || domain.endsWith('.supportrd.com')
+      || url.includes('://supportrd.com')
+      || url.includes('://shop.supportrd.com');
+  }
+
   function renderWebsiteEntryBoard(state, active){
     const movements = Array.isArray(state.outreachMovements) ? state.outreachMovements : [];
     const rows = (movements.length ? movements : [active]).slice(0, 16).map((item, index)=>({
@@ -941,6 +950,7 @@
       active: item.key && item.key === active.key || index === Number(state.outreachActiveIndex || 0)
     }));
     const current = websiteTargetFor(active);
+    const currentOwned = isOwnedSupportRDSurface(current);
     return `
       <section class="sr-global-band sr-bot-websites">
         <div class="sr-global-band-head">
@@ -951,25 +961,29 @@
           <div>
             <span>Current Website Target</span>
             <strong>${esc(current.label || current.domain || 'Target website')}</strong>
-            <p>${esc(current.purpose || 'The bot is preparing a draft/review route for this website lane.')}</p>
+            <p>${esc(currentOwned ? 'SupportRD-owned surface. The bot can work here in auto-owned mode; outside websites still stay review-ready.' : (current.purpose || 'The bot is preparing a draft/review route for this website lane.'))}</p>
             <code>${esc(current.tracking_url || 'https://supportrd.com?utm_source=supportrd_bot&sr_bot=1')}</code>
           </div>
-          <a href="${esc(current.url || 'https://supportrd.com')}" target="_blank" rel="noopener">Open Website</a>
+          <a href="${esc(current.url || 'https://supportrd.com')}" target="_blank" rel="noopener">${currentOwned ? 'Open Owned Feed' : 'Open Website'}</a>
         </div>
         <div class="sr-bot-site-grid">
-          ${rows.map(({item, site, active: isActive})=>`
+          ${rows.map(({item, site, active: isActive})=>{
+            const owned = isOwnedSupportRDSurface(site);
+            const status = owned ? 'owned surface live' : (site.status || item.status || 'queued');
+            const action = owned ? 'open owned feed' : 'review target';
+            return `
             <article class="${isActive ? 'active' : ''}">
               <span>${esc(site.lane || item.placement_lane || placementLaneFor(item).label)}</span>
               <strong>${esc(site.label || site.domain || 'Target website')}</strong>
-              <p>${esc(site.purpose || item.target || 'Owner-review placement route')}</p>
+              <p>${esc(owned ? 'Internal SupportRD route for the live bot/owned feed.' : (site.purpose || item.target || 'Owner-review placement route'))}</p>
               <div>
                 <b>${esc(site.domain || 'supportrd.com')}</b>
-                <em>${esc(site.status || item.status || 'queued')}</em>
+                <em>${esc(status)}</em>
               </div>
               <small>${esc(item.title || item.category || 'SupportRD movement')}</small>
-              <a href="${esc(site.url || 'https://supportrd.com')}" target="_blank" rel="noopener">review</a>
+              <a href="${esc(site.url || 'https://supportrd.com')}" target="_blank" rel="noopener">${esc(action)}</a>
             </article>
-          `).join('')}
+          `}).join('')}
         </div>
       </section>
     `;
