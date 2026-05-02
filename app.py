@@ -20,7 +20,7 @@ import hmac
 import hashlib
 import base64
 from io import BytesIO
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlparse, urlencode
 from apscheduler.schedulers.background import BackgroundScheduler
 from openai import OpenAI
 
@@ -62,6 +62,10 @@ def aria_openai_enabled():
 SHOPIFY_STORE = os.environ.get("SHOPIFY_STORE", "")
 SHOPIFY_TOKEN = os.environ.get("SHOPIFY_STOREFRONT_TOKEN", "")
 SHOPIFY_ADMIN_TOKEN = os.environ.get("SHOPIFY_ADMIN_TOKEN", "")
+SHOPIFY_CLIENT_ID = os.environ.get("SHOPIFY_CLIENT_ID", "a568e85681a8c71701c632c569f853b0")
+SHOPIFY_CLIENT_SECRET = os.environ.get("SHOPIFY_CLIENT_SECRET", "")
+SHOPIFY_OAUTH_SCOPES = os.environ.get("SHOPIFY_OAUTH_SCOPES", "read_reports")
+SHOPIFY_OAUTH_REDIRECT_URL = os.environ.get("SHOPIFY_OAUTH_REDIRECT_URL", "https://supportrd.com/api/shopify/oauth/callback")
 SHOPIFY_ADMIN_API_VERSION = os.environ.get("SHOPIFY_ADMIN_API_VERSION", "2026-01")
 SHOPIFY_BLOG_ID = os.environ.get("SHOPIFY_BLOG_ID", "")
 SHOPIFY_WEBHOOK_SECRET = os.environ.get("SHOPIFY_WEBHOOK_SECRET", "")
@@ -116,6 +120,113 @@ def resolve_shopify_storefront_domain():
     if store.endswith("supportrd.com") or store.endswith(".myshopify.com") or store.endswith("theplantmaninc.com"):
         return "shop.supportrd.com"
     return "shop.supportrd.com"
+
+def shopify_oauth_scopes():
+    scopes = []
+    for scope in re.split(r"[,\s]+", SHOPIFY_OAUTH_SCOPES or ""):
+        clean = scope.strip()
+        if clean and clean not in scopes:
+            scopes.append(clean)
+    if "read_reports" not in scopes:
+        scopes.append("read_reports")
+    return ",".join(scopes)
+
+def get_stored_shopify_admin_token():
+    try:
+        conn = sqlite3.connect(CREDIT_DB_PATH)
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT shop_domain, access_token, scope, updated_at FROM shopify_oauth_tokens "
+            "ORDER BY updated_at DESC LIMIT 1"
+        )
+        row = cur.fetchone()
+        conn.close()
+        if not row:
+            return {}
+        return {
+            "shop_domain": row[0] or "",
+            "access_token": row[1] or "",
+            "scope": row[2] or "",
+            "updated_at": row[3] or "",
+        }
+    except:
+        return {}
+
+def get_shopify_admin_token():
+    if SHOPIFY_ADMIN_TOKEN:
+        return SHOPIFY_ADMIN_TOKEN
+    stored = get_stored_shopify_admin_token()
+    return stored.get("access_token", "")
+
+def get_shopify_admin_token_status():
+    stored = get_stored_shopify_admin_token()
+    if SHOPIFY_ADMIN_TOKEN:
+        return {
+            "configured": True,
+            "source": "environment",
+            "scope": "",
+            "shop_domain": resolve_shopify_api_domain() or "",
+            "updated_at": "",
+        }
+    if stored.get("access_token"):
+        return {
+            "configured": True,
+            "source": "oauth_database",
+            "scope": stored.get("scope", ""),
+            "shop_domain": stored.get("shop_domain", ""),
+            "updated_at": stored.get("updated_at", ""),
+        }
+    return {
+        "configured": False,
+        "source": "",
+        "scope": "",
+        "shop_domain": resolve_shopify_api_domain() or "",
+        "updated_at": "",
+    }
+
+def save_shopify_oauth_token(shop_domain, access_token, scope=""):
+    if not shop_domain or not access_token:
+        return False
+    try:
+        now = datetime.utcnow().isoformat() + "Z"
+        conn = sqlite3.connect(CREDIT_DB_PATH)
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO shopify_oauth_tokens (shop_domain, access_token, scope, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(shop_domain) DO UPDATE SET "
+            "access_token=excluded.access_token, scope=excluded.scope, updated_at=excluded.updated_at",
+            (shop_domain, access_token, scope or "", now, now),
+        )
+        conn.commit()
+        conn.close()
+        return True
+    except:
+        return False
+
+def validate_shopify_oauth_hmac(args, client_secret):
+    received = (args.get("hmac") or "").strip()
+    if not received or not client_secret:
+        return False
+    parts = []
+    for key in sorted(args.keys()):
+        if key in {"hmac", "signature"}:
+            continue
+        for value in args.getlist(key):
+            parts.append(f"{key}={value}")
+    message = "&".join(parts)
+    digest = hmac.new(client_secret.encode("utf-8"), message.encode("utf-8"), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(digest, received)
+
+def build_shopify_oauth_install_url(state):
+    api_store = resolve_shopify_api_domain() or "supportdr-com.myshopify.com"
+    params = {
+        "client_id": SHOPIFY_CLIENT_ID,
+        "scope": shopify_oauth_scopes(),
+        "redirect_uri": SHOPIFY_OAUTH_REDIRECT_URL,
+        "state": state,
+    }
+    return f"https://{api_store}/admin/oauth/authorize?{urlencode(params)}"
 
 SEO_ENABLED = os.environ.get("SEO_ENABLED", "true").lower() == "true"
 SEO_INTERVAL_HOURS = int(os.environ.get("SEO_INTERVAL_HOURS", "24"))
@@ -1385,6 +1496,24 @@ def init_subscription_db():
     except:
         pass
 
+def init_shopify_oauth_db():
+    try:
+        conn = sqlite3.connect(CREDIT_DB_PATH)
+        cur = conn.cursor()
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS shopify_oauth_tokens ("
+            "shop_domain TEXT PRIMARY KEY,"
+            "access_token TEXT,"
+            "scope TEXT,"
+            "created_at TEXT,"
+            "updated_at TEXT"
+            ")"
+        )
+        conn.commit()
+        conn.close()
+    except:
+        pass
+
 def init_security_db():
     try:
         conn = sqlite3.connect(SECURITY_DB_PATH)
@@ -2606,9 +2735,10 @@ def fetch_shopify_sessions_report(force=False):
         return cached
 
     api_store = resolve_shopify_api_domain()
-    if not api_store or not SHOPIFY_ADMIN_TOKEN:
+    admin_token = get_shopify_admin_token()
+    if not api_store or not admin_token:
         payload = _shopify_sessions_report_empty(
-            "Connect SHOPIFY_ADMIN_TOKEN with the read_reports scope to read the private Shopify Analytics sessions report.",
+            "Connect Shopify OAuth or SHOPIFY_ADMIN_TOKEN with the read_reports scope to read the private Shopify Analytics sessions report.",
             configured=False,
         )
         SHOPIFY_SESSIONS_REPORT_CACHE.update({"at": now, "payload": payload})
@@ -2633,7 +2763,7 @@ def fetch_shopify_sessions_report(force=False):
         response = requests.post(
             f"https://{api_store}/admin/api/{SHOPIFY_ADMIN_API_VERSION}/graphql.json",
             headers={
-                "X-Shopify-Access-Token": SHOPIFY_ADMIN_TOKEN,
+                "X-Shopify-Access-Token": admin_token,
                 "Content-Type": "application/json",
             },
             json={"query": graphql_query, "variables": {"query": SHOPIFY_SESSIONS_REPORT_QUERY}},
@@ -3995,14 +4125,15 @@ def send_smtp_html(to_email, subject, html):
 
 def get_shopify_finance_snapshot():
     api_store = resolve_shopify_api_domain()
-    if not api_store or not SHOPIFY_ADMIN_TOKEN:
+    admin_token = get_shopify_admin_token()
+    if not api_store or not admin_token:
         return {"ok": False, "error": "shopify_admin_not_configured"}
     try:
         now = datetime.utcnow()
         created_min = (now - timedelta(days=8)).isoformat() + "Z"
         r = requests.get(
             f"https://{api_store}/admin/api/2024-01/orders.json",
-            headers={"X-Shopify-Access-Token": SHOPIFY_ADMIN_TOKEN},
+            headers={"X-Shopify-Access-Token": admin_token},
             params={
                 "status": "any",
                 "financial_status": "paid",
@@ -6328,10 +6459,137 @@ def test_shopify_webhook_mapping():
         "item_count": len(items),
     }
 
+@app.route("/api/shopify/oauth/status")
+def shopify_oauth_status():
+    token_status = get_shopify_admin_token_status()
+    state_preview = uuid.uuid4().hex
+    install_url = ""
+    if SHOPIFY_CLIENT_ID:
+        install_url = build_shopify_oauth_install_url(state_preview)
+    return {
+        "ok": True,
+        "connected": bool(token_status.get("configured")),
+        "token_source": token_status.get("source"),
+        "token_scope": token_status.get("scope"),
+        "token_updated_at": token_status.get("updated_at"),
+        "store": resolve_shopify_api_domain() or "supportdr-com.myshopify.com",
+        "client_id_configured": bool(SHOPIFY_CLIENT_ID),
+        "client_secret_configured": bool(SHOPIFY_CLIENT_SECRET),
+        "redirect_url": SHOPIFY_OAUTH_REDIRECT_URL,
+        "required_redirect_url": "https://supportrd.com/api/shopify/oauth/callback",
+        "required_scope": "read_reports",
+        "requested_scopes": shopify_oauth_scopes(),
+        "start_url": "https://supportrd.com/api/shopify/oauth/start",
+        "install_url_preview": install_url,
+        "level_2_note": "ShopifyQL sessions can still require Level 2 protected customer data access after read_reports is connected.",
+    }
+
+@app.route("/api/shopify/oauth/start")
+def shopify_oauth_start():
+    if not SHOPIFY_CLIENT_ID:
+        return {"ok": False, "error": "SHOPIFY_CLIENT_ID_missing"}, 503
+    if not SHOPIFY_CLIENT_SECRET:
+        return {
+            "ok": False,
+            "error": "SHOPIFY_CLIENT_SECRET_missing",
+            "message": "Reveal the Shopify app secret and add it to Render as SHOPIFY_CLIENT_SECRET before starting OAuth.",
+        }, 503
+    state = uuid.uuid4().hex
+    session["shopify_oauth_state"] = state
+    return redirect(build_shopify_oauth_install_url(state))
+
+@app.route("/api/shopify/oauth/callback")
+def shopify_oauth_callback():
+    if not SHOPIFY_CLIENT_ID or not SHOPIFY_CLIENT_SECRET:
+        return "Shopify OAuth is missing SHOPIFY_CLIENT_ID or SHOPIFY_CLIENT_SECRET in Render.", 503
+
+    expected_state = session.get("shopify_oauth_state")
+    state = (request.args.get("state") or "").strip()
+    if expected_state and not hmac.compare_digest(expected_state, state):
+        return "Shopify OAuth state did not match. Start again from /api/shopify/oauth/start.", 401
+    if not validate_shopify_oauth_hmac(request.args, SHOPIFY_CLIENT_SECRET):
+        return "Shopify OAuth HMAC failed. Do not save this token.", 401
+
+    shop_domain = normalize_shopify_store_domain(request.args.get("shop") or "")
+    if not shop_domain or not shop_domain.endswith(".myshopify.com"):
+        return "Shopify OAuth returned an invalid shop domain.", 400
+
+    code = (request.args.get("code") or "").strip()
+    if not code:
+        return "Shopify OAuth callback did not include a code.", 400
+
+    try:
+        token_response = requests.post(
+            f"https://{shop_domain}/admin/oauth/access_token",
+            headers={"Accept": "application/json"},
+            data={
+                "client_id": SHOPIFY_CLIENT_ID,
+                "client_secret": SHOPIFY_CLIENT_SECRET,
+                "code": code,
+            },
+            timeout=18,
+        )
+        if token_response.status_code >= 400:
+            return {
+                "ok": False,
+                "error": "shopify_token_exchange_failed",
+                "status": token_response.status_code,
+                "body": token_response.text[:700],
+            }, 502
+        token_body = token_response.json() or {}
+    except Exception as e:
+        return {"ok": False, "error": "shopify_token_exchange_error", "message": str(e)[:300]}, 502
+
+    access_token = token_body.get("access_token") or ""
+    scope = token_body.get("scope") or ""
+    if not access_token:
+        return {"ok": False, "error": "shopify_access_token_missing", "body": token_body}, 502
+
+    saved = save_shopify_oauth_token(shop_domain, access_token, scope)
+    SHOPIFY_SESSIONS_REPORT_CACHE.update({"at": 0, "payload": None})
+    session.pop("shopify_oauth_state", None)
+    if not saved:
+        return {"ok": False, "error": "shopify_token_save_failed"}, 500
+
+    safe_scope = escape(scope or "No scopes returned")
+    safe_shop = escape(shop_domain)
+    return render_template_string(
+        """
+        <!doctype html>
+        <html lang="en">
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>SupportRD Shopify Connected</title>
+          <style>
+            body{margin:0;min-height:100vh;display:grid;place-items:center;background:#070b12;color:#f8fbff;font-family:Inter,Arial,sans-serif;}
+            main{width:min(720px,calc(100vw - 32px));border:1px solid rgba(130,246,255,.35);background:rgba(10,18,28,.88);border-radius:18px;padding:28px;box-shadow:0 30px 90px rgba(0,0,0,.45);}
+            h1{margin:0 0 10px;font-size:28px;}
+            p{color:#c9d6e2;line-height:1.5;}
+            code{background:#111b28;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:3px 7px;color:#78f6ff;}
+            a{display:inline-flex;margin-top:16px;color:#071019;background:#78f6ff;text-decoration:none;font-weight:800;border-radius:999px;padding:11px 16px;}
+          </style>
+        </head>
+        <body>
+          <main>
+            <h1>Shopify connected to SupportRD</h1>
+            <p>The app saved the Admin access token internally for <code>{{ shop }}</code>. The token is not shown on this page.</p>
+            <p>Connected scopes: <code>{{ scope }}</code></p>
+            <p>If the sessions report still says Level 2 protected customer data is required, finish that approval inside Shopify. The manual bridge stays active while Shopify reviews it.</p>
+            <a href="/Globaltracker?_shopifyoauth=connected">Return to Globaltracker</a>
+          </main>
+        </body>
+        </html>
+        """,
+        shop=safe_shop,
+        scope=safe_scope,
+    )
+
 @app.route("/api/shopify/connector-health")
 def shopify_connector_health():
     storefront_configured = bool(SHOPIFY_STORE and SHOPIFY_TOKEN)
-    admin_configured = bool(SHOPIFY_STORE and SHOPIFY_ADMIN_TOKEN)
+    admin_token_status = get_shopify_admin_token_status()
+    admin_configured = bool(SHOPIFY_STORE and admin_token_status.get("configured"))
     webhook_configured = bool(SHOPIFY_WEBHOOK_SECRET)
 
     missing = []
@@ -6339,8 +6597,8 @@ def shopify_connector_health():
         missing.append("SHOPIFY_STORE")
     if not SHOPIFY_TOKEN:
         missing.append("SHOPIFY_STOREFRONT_TOKEN")
-    if not SHOPIFY_ADMIN_TOKEN:
-        missing.append("SHOPIFY_ADMIN_TOKEN")
+    if not admin_token_status.get("configured"):
+        missing.append("SHOPIFY_ADMIN_TOKEN or Shopify OAuth connection")
     if not SHOPIFY_WEBHOOK_SECRET:
         missing.append("SHOPIFY_WEBHOOK_SECRET")
 
@@ -6371,6 +6629,8 @@ def shopify_connector_health():
         "storefront_configured": storefront_configured,
         "admin_configured": admin_configured,
         "webhook_configured": webhook_configured,
+        "admin_token_source": admin_token_status.get("source"),
+        "admin_token_scope": admin_token_status.get("scope"),
         "products_live": products_live,
         "product_count": product_count,
         "missing": missing,
@@ -6442,7 +6702,7 @@ def system_map_status():
             },
             "shopify": {
                 "storefront_configured": bool(SHOPIFY_STORE and SHOPIFY_TOKEN),
-                "admin_configured": bool(SHOPIFY_STORE and SHOPIFY_ADMIN_TOKEN),
+                "admin_configured": bool(SHOPIFY_STORE and get_shopify_admin_token_status().get("configured")),
                 "webhook_configured": bool(SHOPIFY_WEBHOOK_SECRET),
                 "variant_map_loaded": bool(SHOPIFY_PLAN_VARIANT_MAP),
                 "sku_map_loaded": bool(SHOPIFY_PLAN_SKU_MAP),
@@ -7072,13 +7332,14 @@ def get_products():
     except:
         pass
 
-    if not SHOPIFY_ADMIN_TOKEN:
+    admin_token = get_shopify_admin_token()
+    if not admin_token:
         return []
 
     try:
         r = requests.get(
             f"https://{api_store}/admin/api/2024-01/products.json?limit=20&fields=id,title,handle,image,variants,status,published_at",
-            headers={"X-Shopify-Access-Token": SHOPIFY_ADMIN_TOKEN},
+            headers={"X-Shopify-Access-Token": admin_token},
             timeout=8
         )
         data = r.json()
@@ -7110,12 +7371,13 @@ def get_shopify_blog_id():
     if SHOPIFY_BLOG_ID:
         return SHOPIFY_BLOG_ID
     api_store = resolve_shopify_api_domain()
-    if not api_store or not SHOPIFY_ADMIN_TOKEN:
+    admin_token = get_shopify_admin_token()
+    if not api_store or not admin_token:
         return None
     try:
         r = requests.get(
             f"https://{api_store}/admin/api/2024-01/blogs.json",
-            headers={"X-Shopify-Access-Token": SHOPIFY_ADMIN_TOKEN},
+            headers={"X-Shopify-Access-Token": admin_token},
             timeout=8
         )
         data = r.json()
@@ -7170,7 +7432,8 @@ def generate_seo_post(products):
 
 def publish_shopify_blog():
     api_store = resolve_shopify_api_domain()
-    if not api_store or not SHOPIFY_ADMIN_TOKEN:
+    admin_token = get_shopify_admin_token()
+    if not api_store or not admin_token:
         return False, "Shopify admin not configured"
     blog_id = get_shopify_blog_id()
     if not blog_id:
@@ -7190,7 +7453,7 @@ def publish_shopify_blog():
         r = requests.post(
             f"https://{api_store}/admin/api/2024-01/blogs/{blog_id}/articles.json",
             headers={
-                "X-Shopify-Access-Token": SHOPIFY_ADMIN_TOKEN,
+                "X-Shopify-Access-Token": admin_token,
                 "Content-Type": "application/json"
             },
             json=payload,
@@ -8729,6 +8992,7 @@ init_credit_db()
 init_wellness_db()
 init_community_db()
 init_subscription_db()
+init_shopify_oauth_db()
 init_app_settings_db()
 init_security_db()
 init_studio_db()
