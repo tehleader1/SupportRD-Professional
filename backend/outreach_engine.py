@@ -112,6 +112,78 @@ SUPPORT_RD_PROMO_HOOKS = [
     "Linked Dominican Republic product",
 ]
 
+SEO_GUIDELINE_FOCUS = "google_microsoft_health_hair_care"
+SEO_GUIDELINE_SOURCES = [
+    {
+        "provider": "Google Search Central",
+        "label": "Search Essentials",
+        "url": "https://developers.google.com/search/docs/essentials",
+    },
+    {
+        "provider": "Google Search Central",
+        "label": "Helpful, reliable, people-first content",
+        "url": "https://developers.google.com/search/docs/fundamentals/creating-helpful-content",
+    },
+    {
+        "provider": "Google Search Central",
+        "label": "Spam policies",
+        "url": "https://developers.google.com/search/docs/essentials/spam-policies",
+    },
+    {
+        "provider": "Google Search Central",
+        "label": "Structured data guidelines",
+        "url": "https://developers.google.com/search/docs/appearance/structured-data/sd-policies",
+    },
+    {
+        "provider": "Microsoft Bing",
+        "label": "Bing Webmaster Guidelines",
+        "url": "https://www.bing.com/webmasters/help/webmaster-guidelines-30fba23a",
+    },
+    {
+        "provider": "Microsoft Bing",
+        "label": "How Bing delivers search results",
+        "url": "https://support.microsoft.com/en-us/bing/how-bing-delivers-search-results",
+    },
+]
+SEO_HEALTH_HAIR_RULES = [
+    "Create helpful, reliable, people-first hair-care content before keyword targets.",
+    "Use real customer language in titles, headings, alt text, link text, and page copy.",
+    "Keep SupportRD links crawlable and route readers to the exact useful page, not a doorway page.",
+    "Do not keyword-stuff, hide text, auto-spin thin pages, scrape content, fake reviews, or fake authority.",
+    "For hair/scalp/health-style topics, avoid diagnosis, cure, guaranteed growth, or medical-treatment claims.",
+    "Phrase ARIA/Profile analysis as support and guidance; recommend licensed professional care for medical symptoms.",
+    "Use structured data only for visible, truthful page content, prices, products, reviews, and policies.",
+    "Prioritize Bing relevance, quality, credibility, freshness, location/language fit, engagement, and page speed.",
+    "Show transparency: SupportRD purpose, product route, refund/shipping expectations, support contact, and founder/company context.",
+    "Use exactly https://supportrd.com when the public link is appropriate and permitted.",
+]
+SEO_BOT_INSTRUCTION = (
+    "Google/Microsoft SEO health-hair mode is active: write people-first natural-hair guidance, "
+    "answer the exact concern, use clear searchable words naturally, keep claims truthful, avoid diagnosis/cure promises, "
+    "avoid spam/keyword stuffing/fake authority, and route approved readers to exactly https://supportrd.com."
+)
+
+
+def seo_guidelines_payload(compact=False):
+    rules = SEO_HEALTH_HAIR_RULES[:4] if compact else SEO_HEALTH_HAIR_RULES
+    sources = [
+        {
+            "provider": source["provider"],
+            "label": source["label"],
+            "url": source["url"],
+        }
+        for source in SEO_GUIDELINE_SOURCES
+    ]
+    return {
+        "active": True,
+        "focus": SEO_GUIDELINE_FOCUS,
+        "status": "loaded_into_backend_bot",
+        "bot_instruction": SEO_BOT_INSTRUCTION,
+        "rules": rules,
+        "sources": sources,
+        "health_hair_claim_boundary": "SupportRD can provide hair-care guidance and product education, not medical diagnosis, cures, or guaranteed results.",
+    }
+
 SEEDS = [
     {"category": "free blog post", "title": "Natural hair repair guest article", "target": "beauty blogs", "hook": "SupportRD Caribbean Hair Solutions hair repair routine"},
     {"category": "guest post", "title": "Dry hair and breakage guide", "target": "hair care blogs and local business blogs", "hook": "How SupportRD routes hair concerns to product guidance and real support"},
@@ -261,11 +333,14 @@ BOT_SETTINGS = {
     "approval_required": True,
     "owned_auto_approval": SUPPORTRD_POSTING_MODE in OWNED_POSTING_MODES,
     "swarm_enabled": SWARM_ENABLED,
+    "seo_guideline_mode": SEO_GUIDELINE_FOCUS,
+    "seo_guideline_status": "active",
     "behalf_mode": "intelligent_followup_drafts_with_explicit_approval",
     "attention_low_threshold": 62,
     "attention_goal": "Hone in on owner-reviewed comments, story posts, family letters, and community-safe posts while diversifying placements when attention is weak.",
     "public_link_policy": "When a SupportRD link belongs in public copy, use exactly https://supportrd.com. Answer the person first, then place the clean domain as the next step.",
     "anthony_voice": "Useful, direct, founder-led, natural-hair support first; mention New Hair AI, scanner, analysis, ARIA/Profile help, products, family/career confidence, and Caribbean/Dominican Republic product roots only when relevant.",
+    "seo_content_instruction": SEO_BOT_INSTRUCTION,
     "allowed_work": ["research", "draft", "queue", "log", "diagram", "owner_review"],
     "blocked_without_approval": ["post", "comment", "email", "submit", "use_account", "message"],
 }
@@ -354,6 +429,8 @@ def public_swarm_worker(worker, traffic_math=None):
         "cadence": worker.get("cadence"),
         "can_auto_publish": bool(worker.get("can_auto_publish")),
         "guardrail": worker.get("guardrail"),
+        "seo_guideline_status": "active_google_microsoft_health_hair",
+        "seo_instruction": SEO_BOT_INSTRUCTION,
         "traffic_math_view": swarm_traffic_view_for(worker, traffic_math) if traffic_math else {},
     }
 
@@ -397,6 +474,8 @@ def swarm_payload(movement_rows=None, traffic_math=None):
         "public_owned_surface_policy": "SupportRD-owned surfaces are public/crawlable when posted, such as FAQ Lounge, hair-problems, Growth Hub, and product/support pages.",
         "auto_publish_scope": "Only SupportRD-owned public surfaces can auto-publish when posting mode is enabled; outside platforms require a permitted connector.",
         "anti_ban_policy": "No account rotation, proxy tricks, captcha bypassing, speed hacks, fake engagement, or random-site autoposting.",
+        "seo_guidelines": seo_guidelines_payload(),
+        "seo_instruction": SEO_BOT_INSTRUCTION,
         "traffic_math": traffic_math,
         "traffic_instruction": traffic_instruction_for_bot(traffic_math),
         "workers": workers,
@@ -786,7 +865,9 @@ def copy_for(item):
     voice_line = (
         "Use Anthony's SupportRD voice: helpful first, real natural-hair support, New Hair AI, "
         "New Hair Scanner, New Hair Analysis, ARIA/Profile guidance, family/career confidence, "
-        "and a clean next step to SupportRD.com."
+        "and a clean next step to SupportRD.com. Follow the Google/Microsoft SEO health-hair rules: "
+        "people-first help, truthful product guidance, no diagnosis or cure promises, no keyword stuffing, "
+        "and no fake authority."
     )
     if ("salon" in cat or "hair store" in cat) and "comment" not in cat and "post" not in cat:
         message = (
@@ -873,6 +954,9 @@ def copy_for(item):
         "target": item.get("target", "public audience"),
         "message": message,
         "voice_instruction": voice_line,
+        "seo_guideline_status": "active_google_microsoft_health_hair",
+        "seo_guardrail": SEO_BOT_INSTRUCTION,
+        "seo_sources": [source["label"] for source in SEO_GUIDELINE_SOURCES],
         "cta": public_link,
         "public_url": public_link,
         "internal_tracking_url": internal_tracking_url,
@@ -1836,6 +1920,7 @@ def submit_through_connected_api(payload):
 
 def settings_payload(traffic_math=None):
     traffic_math = traffic_math or bot_traffic_math_payload()
+    seo_guidelines = seo_guidelines_payload()
     owned_enabled = SUPPORTRD_POSTING_MODE in OWNED_POSTING_MODES
     connected_enabled = bool(CONNECT_API_URL)
     allowed_work = list(BOT_SETTINGS.get("allowed_work", []))
@@ -1865,6 +1950,8 @@ def settings_payload(traffic_math=None):
         "public_owned_surface_scope": "FAQ Lounge, hair-problems, Growth Hub, public account/backlink pages, product/support pages, and any SupportRD-owned page can be used as public crawlable posting surfaces.",
         "traffic_math": traffic_math,
         "traffic_math_instruction": traffic_instruction_for_bot(traffic_math),
+        "seo_guidelines": seo_guidelines,
+        "seo_instruction": SEO_BOT_INSTRUCTION,
         "bot_swarm": swarm_payload(traffic_math=traffic_math),
         "random_discovery_targets_enabled": RANDOM_DISCOVERY_TARGETS_ENABLED,
         "random_discovery_window_seconds": RANDOM_DISCOVERY_WINDOW_SECONDS,
@@ -1878,6 +1965,13 @@ def settings_payload(traffic_math=None):
         "focus_priority": "comments, story posts, family letters, community-safe posts",
         "focus_terms": FOCUS_TERMS,
         "promo_hooks": SUPPORT_RD_PROMO_HOOKS,
+        "seo_search_quality_priority": [
+            "helpful natural-hair concern pages",
+            "clear product/support routes",
+            "truthful health-hair guidance without cure claims",
+            "crawlable internal links and visible structured data",
+            "fresh, credible, founder/company-transparent content",
+        ],
         "explicit_approval_path": [
             "bot drafts follow-up",
             "owner token unlocks green approval and auto-click approval",
@@ -1910,6 +2004,7 @@ def normalize_item(item):
         "permission": "manual approval required before posting, emailing, submitting, or commenting",
         "automation_scope": "research, drafting, queueing, and logging only",
         "agent_ref": BOT_AGENT_REF,
+        "seo_guideline_status": "active_google_microsoft_health_hair",
     }
     return normalized
 
@@ -2017,6 +2112,10 @@ def movement_for(item):
         "movement": movement,
         "next_action": next_action,
         "draft": (item.get("copy") or {}).get("message") or item.get("hook") or "",
+        "seo_guideline_status": "active_google_microsoft_health_hair",
+        "seo_guideline_focus": SEO_GUIDELINE_FOCUS,
+        "seo_guideline_instruction": SEO_BOT_INSTRUCTION,
+        "seo_guidelines": seo_guidelines_payload(compact=True),
         "approval_boundary": approval_boundary,
         "updated_at": item.get("updated_at") or item.get("created_at") or utc(),
     }

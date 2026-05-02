@@ -287,6 +287,7 @@
         outreachSettings: payload.settings || state.outreachSettings || null,
         outreachBotSwarm: payload.botSwarm || payload.settings?.bot_swarm || state.outreachBotSwarm || null,
         outreachTrafficMath: payload.trafficMath || payload.settings?.traffic_math || payload.botSwarm?.traffic_math || state.outreachTrafficMath || null,
+        outreachSeoGuidelines: payload.settings?.seo_guidelines || payload.botSwarm?.seo_guidelines || state.outreachSeoGuidelines || null,
         outreachConnectedSubmissions: Array.isArray(payload.connectedSubmissions) ? payload.connectedSubmissions.slice(0, 20) : state.outreachConnectedSubmissions || [],
         outreachLiveTick: Number(state.outreachLiveTick || 0) + 1,
         outreachUpdatedAt: new Date().toISOString()
@@ -1918,6 +1919,9 @@
     const trafficMath = swarm.traffic_math || settings.traffic_math || state.outreachTrafficMath || {};
     const arrival = trafficMath.arrival_estimate || {};
     const trafficInstruction = swarm.traffic_instruction || settings.traffic_math_instruction || 'Traffic math is loading into the swarm.';
+    const seoGuidelines = swarm.seo_guidelines || settings.seo_guidelines || state.outreachSeoGuidelines || {};
+    const seoRules = Array.isArray(seoGuidelines.rules) ? seoGuidelines.rules.slice(0, 4) : [];
+    const seoSources = Array.isArray(seoGuidelines.sources) ? seoGuidelines.sources : [];
     return `
       <section class="sr-global-band sr-bot-swarm">
         <div class="sr-bot-swarm-head">
@@ -1963,6 +1967,19 @@
             <span>What The Bots Change</span>
             <strong>${esc(trafficInstruction)}</strong>
             <p>${arrival.ok ? `Visitor ${esc(arrival.visitor_interval_label || 'waiting')} · product interest ${esc(arrival.product_interest_interval_label || 'waiting')} · cart ${esc(arrival.add_to_cart_interval_label || 'waiting')} · buyer ${esc(arrival.conversion_interval_label || 'waiting')}.` : 'The swarm will tighten copy once the Shopify baseline is saved.'}</p>
+          </article>
+        </div>
+        <div class="sr-bot-swarm-traffic sr-bot-swarm-seo">
+          <article>
+            <span>Google / Microsoft SEO</span>
+            <strong>${esc(seoGuidelines.status || settings.seo_guideline_status || 'active')} - ${esc(seoGuidelines.focus || settings.seo_guideline_mode || 'health-hair care')}</strong>
+            <p>${esc(seoGuidelines.bot_instruction || settings.seo_instruction || 'People-first search rules are loading into the backend bot.')}</p>
+          </article>
+          <article>
+            <span>Hair Care Claim Guardrail</span>
+            <strong>${esc(seoGuidelines.health_hair_claim_boundary || 'Guidance and product education, not medical diagnosis or cure claims.')}</strong>
+            <p>${esc(seoRules.length ? seoRules.join(' | ') : 'Helpful content, crawlable links, truthful structured data, no spam, no fake authority.')}</p>
+            <small>${esc(seoSources.length ? `${seoSources.length} official search guideline sources loaded` : 'Official source list waiting for refresh')}</small>
           </article>
         </div>
         <div class="sr-bot-swarm-guardrails">
