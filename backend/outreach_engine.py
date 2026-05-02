@@ -1,16 +1,18 @@
 from flask import Blueprint, Response, abort, jsonify, request
 import json
 import os
+import re
 import sqlite3
 import threading
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 outreach_engine_bp = Blueprint("outreach_engine", __name__)
 
 DB_PATH = os.environ.get("OUTREACH_DB_PATH", os.environ.get("GLOBAL_SWEEP_DB_PATH", "global_sweep.db"))
+TRAFFIC_DB_PATH = os.environ.get("CREDIT_DB_PATH", os.environ.get("CLAIM_DB_PATH", "users.db"))
 SUPPORT_URL = os.environ.get("SUPPORT_RD_PUBLIC_URL", "https://supportrd.com")
 PUBLIC_SUPPORT_LINK = "https://supportrd.com"
 BOT_AGENT_REF = os.environ.get("SUPPORT_RD_BOT_AGENT_REF", "agt_69f2460cc584819192e4a3a276e8b004")
@@ -342,7 +344,8 @@ BOT_SWARM_WORKERS = [
 ]
 
 
-def public_swarm_worker(worker):
+def public_swarm_worker(worker, traffic_math=None):
+    traffic_math = traffic_math or {}
     return {
         "id": worker.get("id"),
         "name": worker.get("name"),
@@ -351,6 +354,7 @@ def public_swarm_worker(worker):
         "cadence": worker.get("cadence"),
         "can_auto_publish": bool(worker.get("can_auto_publish")),
         "guardrail": worker.get("guardrail"),
+        "traffic_math_view": swarm_traffic_view_for(worker, traffic_math) if traffic_math else {},
     }
 
 
@@ -372,8 +376,9 @@ def swarm_worker_for(item, lane=None):
     return public_swarm_worker(BOT_SWARM_WORKERS[-1])
 
 
-def swarm_payload(movement_rows=None):
+def swarm_payload(movement_rows=None, traffic_math=None):
     movement_rows = movement_rows or []
+    traffic_math = traffic_math or bot_traffic_math_payload()
     active_counts = {worker["id"]: 0 for worker in BOT_SWARM_WORKERS}
     for movement in movement_rows:
         worker = movement.get("swarm_worker") or {}
@@ -382,7 +387,7 @@ def swarm_payload(movement_rows=None):
             active_counts[worker_id] += 1
     workers = []
     for worker in BOT_SWARM_WORKERS:
-        public = public_swarm_worker(worker)
+        public = public_swarm_worker(worker, traffic_math)
         public["active_movements"] = active_counts.get(worker["id"], 0)
         workers.append(public)
     return {
@@ -392,6 +397,8 @@ def swarm_payload(movement_rows=None):
         "public_owned_surface_policy": "SupportRD-owned surfaces are public/crawlable when posted, such as FAQ Lounge, hair-problems, Growth Hub, and product/support pages.",
         "auto_publish_scope": "Only SupportRD-owned public surfaces can auto-publish when posting mode is enabled; outside platforms require a permitted connector.",
         "anti_ban_policy": "No account rotation, proxy tricks, captcha bypassing, speed hacks, fake engagement, or random-site autoposting.",
+        "traffic_math": traffic_math,
+        "traffic_instruction": traffic_instruction_for_bot(traffic_math),
         "workers": workers,
     }
 
@@ -401,6 +408,280 @@ _scheduler_lock = threading.Lock()
 
 def utc():
     return datetime.now(timezone.utc).isoformat()
+
+
+def _traffic_float(value):
+    try:
+        if isinstance(value, str):
+            value = value.replace(",", "").replace("%", "").strip()
+        return float(value or 0)
+    except:
+        return 0.0
+
+
+def _traffic_int(value):
+    return int(round(_traffic_float(value)))
+
+
+def _traffic_label_percent(text, labels):
+    text = str(text or "")
+    compact = re.sub(r"\s+", " ", text)
+    for label in labels:
+        found = re.search(rf"{label}\s*[:\t ]+(-?(?:\d+(?:\.\d+)?|\.\d+))\s*%", compact, re.IGNORECASE)
+        if found:
+            return _traffic_float(found.group(1))
+    return 0.0
+
+
+def _traffic_parse_metrics(report_text):
+    text = str(report_text or "")
+    compact = re.sub(r"\s+", " ", text)
+    lower = compact.lower()
+    metrics = {}
+    conversion = _traffic_label_percent(compact, [r"conversion rate", r"converted sessions?"])
+    bounce = _traffic_label_percent(compact, [r"bounce rate"])
+    cart = _traffic_label_percent(compact, [r"added to cart rate", r"add to cart rate", r"cart rate"])
+    if conversion:
+        metrics["conversion_rate_percent"] = conversion
+    if bounce:
+        metrics["bounce_rate_percent"] = bounce
+    if cart:
+        metrics["added_to_cart_rate_percent"] = cart
+    duration = re.search(r"average session duration\s*[:\t ]+(\d+(?:\.\d+)?)\s*seconds?", compact, re.IGNORECASE)
+    if duration:
+        metrics["average_session_duration_seconds"] = _traffic_float(duration.group(1))
+    product = re.search(r"product[-\s]?interest(?:\s+metric|\s+signals?)?\s*[:\t ]+(\d[\d,]*)", compact, re.IGNORECASE)
+    if product:
+        metrics["product_interest_count"] = _traffic_int(product.group(1))
+    percent_values = [_traffic_float(item) for item in re.findall(r"(-?(?:\d+(?:\.\d+)?|\.\d+))\s*%", compact)]
+    if percent_values and "conversion_rate_percent" not in metrics:
+        metrics["conversion_rate_percent"] = percent_values[0]
+    if len(percent_values) > 1 and "bounce_rate_percent" not in metrics:
+        metrics["bounce_rate_percent"] = percent_values[1]
+    if len(percent_values) > 2 and "added_to_cart_rate_percent" not in metrics:
+        metrics["added_to_cart_rate_percent"] = percent_values[2]
+    numbers = [_traffic_float(item) for item in re.findall(r"(?<![\w.])-?(?:\d[\d,]*(?:\.\d+)?|\.\d+)(?![\w.])", compact)]
+    if numbers and ("online store visitors" in lower or "conversion rate" in lower or "bounce rate" in lower):
+        # Shopify copied report summaries usually arrive as labels followed by one row of values.
+        metrics.setdefault("total_sessions", _traffic_int(numbers[0]))
+        if len(numbers) > 1:
+            metrics.setdefault("total_online_store_visitors", _traffic_int(numbers[1]))
+    if "product interest" in lower and len(numbers) >= 3:
+        metrics["product_interest_count"] = _traffic_int(numbers[-1])
+    return metrics
+
+
+def _traffic_window_days(query="", report_text="", series=None):
+    series = series or []
+    if len(series) > 1:
+        return max(1, len(series))
+    combined = f"{query or ''} {report_text or ''}"
+    found = re.search(r"startOfDay\(-(\d+)d\)", combined, re.IGNORECASE)
+    if found:
+        return max(1, _traffic_int(found.group(1)))
+    found = re.search(r"(\d{4}-\d{2}-\d{2})\s*(?:-|to|through)\s*(\d{4}-\d{2}-\d{2})", combined, re.IGNORECASE)
+    if found:
+        try:
+            start = datetime.fromisoformat(found.group(1))
+            end = datetime.fromisoformat(found.group(2))
+            return max(1, (end - start).days + 1)
+        except:
+            pass
+    return 7
+
+
+def _traffic_interval_minutes(minutes):
+    value = _traffic_float(minutes)
+    if not value:
+        return "waiting"
+    if value < 1:
+        return f"{max(1, round(value * 60))} sec"
+    if value < 90:
+        return f"{round(value)} min"
+    hours = value / 60
+    if hours < 48:
+        return f"{hours:.1f} hr" if hours < 10 else f"{hours:.0f} hr"
+    return f"{hours / 24:.1f} days"
+
+
+def _traffic_arrival_estimate(total_visitors=0, total_sessions=0, metrics=None, query="", report_text="", series=None):
+    metrics = metrics or {}
+    series = series or []
+    visitors = int(total_visitors or metrics.get("total_online_store_visitors") or 0)
+    sessions = int(total_sessions or metrics.get("total_sessions") or 0)
+    window_days = _traffic_window_days(query=query, report_text=report_text, series=series)
+    total_minutes = max(1, window_days * 24 * 60)
+    total_hours = total_minutes / 60
+    conversion_rate = _traffic_float(metrics.get("conversion_rate_percent"))
+    bounce_rate = _traffic_float(metrics.get("bounce_rate_percent"))
+    cart_rate = _traffic_float(metrics.get("added_to_cart_rate_percent"))
+    average_duration = _traffic_float(metrics.get("average_session_duration_seconds"))
+    product_interest_count = int(metrics.get("product_interest_count") or 0)
+    expected_conversions = sessions * (conversion_rate / 100) if conversion_rate else 0
+    expected_add_to_carts = sessions * (cart_rate / 100) if cart_rate else 0
+    engaged_sessions = sessions * max(0, 1 - (bounce_rate / 100)) if bounce_rate else 0
+    active_seconds = sessions * average_duration if average_duration else 0
+    visitor_interval = total_minutes / visitors if visitors else 0
+    product_interval = total_minutes / product_interest_count if product_interest_count else 0
+    cart_interval_hours = total_hours / expected_add_to_carts if expected_add_to_carts else 0
+    conversion_interval_hours = total_hours / expected_conversions if expected_conversions else 0
+    engaged_interval = total_minutes / engaged_sessions if engaged_sessions else 0
+    return {
+        "ok": bool(visitors or sessions),
+        "source": "shopify_arrival_math_for_bot",
+        "window_days": window_days,
+        "visitors": visitors,
+        "sessions": sessions,
+        "visitor_interval_minutes": round(visitor_interval, 2) if visitor_interval else 0,
+        "visitor_interval_label": _traffic_interval_minutes(visitor_interval),
+        "product_interest_count": product_interest_count,
+        "product_interest_interval_minutes": round(product_interval, 2) if product_interval else 0,
+        "product_interest_interval_label": _traffic_interval_minutes(product_interval),
+        "added_to_cart_rate_percent": round(cart_rate, 4) if cart_rate else 0,
+        "expected_add_to_carts": round(expected_add_to_carts, 2) if expected_add_to_carts else 0,
+        "add_to_cart_interval_hours": round(cart_interval_hours, 2) if cart_interval_hours else 0,
+        "add_to_cart_interval_label": _traffic_interval_minutes(cart_interval_hours * 60),
+        "conversion_rate_percent": round(conversion_rate, 4) if conversion_rate else 0,
+        "expected_conversions": round(expected_conversions, 2) if expected_conversions else 0,
+        "conversion_interval_hours": round(conversion_interval_hours, 2) if conversion_interval_hours else 0,
+        "conversion_interval_label": _traffic_interval_minutes(conversion_interval_hours * 60),
+        "bounce_rate_percent": round(bounce_rate, 2) if bounce_rate else 0,
+        "engaged_sessions": int(round(engaged_sessions)) if engaged_sessions else 0,
+        "engaged_interval_minutes": round(engaged_interval, 2) if engaged_interval else 0,
+        "engaged_interval_label": _traffic_interval_minutes(engaged_interval),
+        "average_session_duration_seconds": round(average_duration, 2) if average_duration else 0,
+        "average_active_sessions": round(active_seconds / (total_minutes * 60), 3) if active_seconds else 0,
+        "bot_read": "Use this as a baseline clock, not an exact live visitor count.",
+    }
+
+
+def _traffic_latest_manual_report():
+    try:
+        conn = sqlite3.connect(TRAFFIC_DB_PATH)
+        row = conn.execute(
+            "SELECT report_query, report_text, parsed_json, total_online_store_visitors, total_sessions, created_at "
+            "FROM shopify_manual_session_reports ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        conn.close()
+    except:
+        row = None
+    if not row:
+        return {"ok": False, "source": "manual_shopify_report_missing", "arrival_estimate": _traffic_arrival_estimate()}
+    try:
+        series = json.loads(row[2] or "[]")
+    except:
+        series = []
+    metrics = _traffic_parse_metrics(row[1] or "")
+    total_visitors = int(row[3] or metrics.get("total_online_store_visitors") or sum(int(item.get("online_store_visitors") or 0) for item in series))
+    total_sessions = int(row[4] or metrics.get("total_sessions") or sum(int(item.get("sessions") or 0) for item in series))
+    return {
+        "ok": True,
+        "source": "manual_shopify_sessions_report",
+        "updated_at": row[5] or "",
+        "total_online_store_visitors": total_visitors,
+        "total_sessions": total_sessions,
+        "metrics": metrics,
+        "arrival_estimate": _traffic_arrival_estimate(total_visitors, total_sessions, metrics, row[0] or "", row[1] or "", series),
+    }
+
+
+def _traffic_live_window(window_minutes=5):
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=max(1, int(window_minutes or 5)))).isoformat()
+    try:
+        conn = sqlite3.connect(TRAFFIC_DB_PATH)
+        cur = conn.cursor()
+        dashboard_filter = "(event_name = 'globaltracker_dashboard_view' OR source = 'supportrd_globaltracker')"
+        real_filter = f"created_at >= ? AND NOT {dashboard_filter}"
+        events = int((cur.execute(f"SELECT COUNT(*) FROM shopify_traffic_events WHERE {real_filter}", (cutoff,)).fetchone() or [0])[0] or 0)
+        visitors = int((cur.execute(f"SELECT COUNT(DISTINCT visitor_key) FROM shopify_traffic_events WHERE {real_filter}", (cutoff,)).fetchone() or [0])[0] or 0)
+        bot_visitors = int((cur.execute("SELECT COUNT(DISTINCT visitor_key) FROM bot_return_visits WHERE created_at >= ?", (cutoff,)).fetchone() or [0])[0] or 0)
+        dashboard_events = int((cur.execute(f"SELECT COUNT(*) FROM shopify_traffic_events WHERE created_at >= ? AND {dashboard_filter}", (cutoff,)).fetchone() or [0])[0] or 0)
+        conn.close()
+    except:
+        events = visitors = bot_visitors = dashboard_events = 0
+    return {
+        "window_minutes": int(window_minutes or 5),
+        "events": events,
+        "visitors": visitors,
+        "bot_visitors": bot_visitors,
+        "dashboard_events": dashboard_events,
+    }
+
+
+def bot_traffic_math_payload():
+    manual = _traffic_latest_manual_report()
+    windows = [_traffic_live_window(minutes) for minutes in (5, 15, 60, 1440)]
+    five = windows[0]
+    score = min(100, int(five["events"] * 8 + five["visitors"] * 15 + five["bot_visitors"] * 32))
+    arrival = manual.get("arrival_estimate") or _traffic_arrival_estimate()
+    bounce = _traffic_float(arrival.get("bounce_rate_percent"))
+    weak_point = "engagement"
+    if bounce >= 85:
+        weak_point = "bounce reduction"
+    elif not five.get("visitors"):
+        weak_point = "click-through"
+    elif _traffic_float(arrival.get("expected_add_to_carts")) < 1:
+        weak_point = "cart intent"
+    return {
+        "ok": bool(manual.get("ok") or five.get("events") or five.get("visitors")),
+        "source": "bot_traffic_math_and_live_pixel_reader",
+        "manual_report": manual,
+        "arrival_estimate": arrival,
+        "live_windows": windows,
+        "wave_score": score,
+        "wave_hot": score >= 42 or five["visitors"] >= 3 or five["events"] >= 6,
+        "weak_point": weak_point,
+        "bot_summary": (
+            f"{arrival.get('visitors', 0)} visitors over {arrival.get('window_days', 0)} days; "
+            f"visitor clock {arrival.get('visitor_interval_label', 'waiting')}; "
+            f"product interest {arrival.get('product_interest_interval_label', 'waiting')}; "
+            f"cart intent {arrival.get('add_to_cart_interval_label', 'waiting')}; "
+            f"buyer clock {arrival.get('conversion_interval_label', 'waiting')}; "
+            f"bounce {arrival.get('bounce_rate_percent', 0)}%."
+        ),
+        "updated_at": utc(),
+    }
+
+
+def traffic_instruction_for_bot(traffic_math):
+    traffic_math = traffic_math or {}
+    arrival = traffic_math.get("arrival_estimate") or {}
+    weak = traffic_math.get("weak_point") or "engagement"
+    if weak == "bounce reduction":
+        return "Traffic math says bounce is high. Bot should write clearer first-line value, exact supportrd.com link, and a hair-problem reason to stay."
+    if weak == "click-through":
+        return "Traffic math says attention is not turning into live visitors yet. Bot should make posts more specific, local, and action-based around supportrd.com."
+    if weak == "cart intent":
+        return "Traffic math says visitors need stronger product/cart reasons. Bot should mention product help, scanner, premium guidance, and exact next click."
+    if arrival.get("expected_conversions"):
+        return "Traffic math has a buyer clock. Bot should protect what works and push clearer checkout/account upgrade routes."
+    return "Use traffic math as the bot baseline and update copy after each live wave."
+
+
+def swarm_traffic_view_for(worker, traffic_math):
+    traffic_math = traffic_math or {}
+    arrival = traffic_math.get("arrival_estimate") or {}
+    worker_id = worker.get("id") or ""
+    base = {
+        "baseline": traffic_math.get("bot_summary") or "Waiting for Shopify traffic math.",
+        "weak_point": traffic_math.get("weak_point") or "engagement",
+        "wave_score": traffic_math.get("wave_score", 0),
+        "instruction": traffic_instruction_for_bot(traffic_math),
+    }
+    if worker_id in {"comment_helper", "family_story_writer"}:
+        base["worker_focus"] = "Turn attention into clicks by making every safe comment/story mention supportrd.com naturally and give one reason to open it."
+    elif worker_id in {"college_career_advocate", "salon_store_partner"}:
+        base["worker_focus"] = "Reduce bounce with practical audience-specific value: career-ready hair, salon after-care, or product guidance."
+    elif worker_id == "attention_router":
+        base["worker_focus"] = "If live visitors stay low, diversify away from repeated channels and route to lower-competition public placements."
+    else:
+        base["worker_focus"] = "Use the report-window math to tighten the message before pushing more volume."
+    base["visitor_interval"] = arrival.get("visitor_interval_label") or "waiting"
+    base["product_interest_interval"] = arrival.get("product_interest_interval_label") or "waiting"
+    base["cart_interval"] = arrival.get("add_to_cart_interval_label") or "waiting"
+    base["buyer_interval"] = arrival.get("conversion_interval_label") or "waiting"
+    base["bounce_rate_percent"] = arrival.get("bounce_rate_percent", 0)
+    return base
 
 
 def db():
@@ -1553,7 +1834,8 @@ def submit_through_connected_api(payload):
     }
 
 
-def settings_payload():
+def settings_payload(traffic_math=None):
+    traffic_math = traffic_math or bot_traffic_math_payload()
     owned_enabled = SUPPORTRD_POSTING_MODE in OWNED_POSTING_MODES
     connected_enabled = bool(CONNECT_API_URL)
     allowed_work = list(BOT_SETTINGS.get("allowed_work", []))
@@ -1581,7 +1863,9 @@ def settings_payload():
         "auto_approval_scope": "SupportRD-owned public surfaces publish as live public SupportRD posts; connected provider lanes feed the connected API; unconnected third-party targets stay queued.",
         "permission_open_scope": "Public listing/submission/free-post targets are prioritized as ready targets. Third-party posting still requires a permitted connected channel, then the green approval can feed that channel.",
         "public_owned_surface_scope": "FAQ Lounge, hair-problems, Growth Hub, public account/backlink pages, product/support pages, and any SupportRD-owned page can be used as public crawlable posting surfaces.",
-        "bot_swarm": swarm_payload(),
+        "traffic_math": traffic_math,
+        "traffic_math_instruction": traffic_instruction_for_bot(traffic_math),
+        "bot_swarm": swarm_payload(traffic_math=traffic_math),
         "random_discovery_targets_enabled": RANDOM_DISCOVERY_TARGETS_ENABLED,
         "random_discovery_window_seconds": RANDOM_DISCOVERY_WINDOW_SECONDS,
         "random_discovery_scope": "Each movement receives a timed random discovery target from the lane pool; the connected API receives that exact found target and comment draft.",
@@ -1995,8 +2279,9 @@ def movements():
     report_rows = rows(request.args.get("status"))
     movement_rows = [movement_for(item) for item in report_rows]
     followups = followup_rows()
-    settings = settings_payload()
-    bot_swarm = swarm_payload(movement_rows)
+    traffic_math = bot_traffic_math_payload()
+    settings = settings_payload(traffic_math=traffic_math)
+    bot_swarm = swarm_payload(movement_rows, traffic_math=traffic_math)
     settings["bot_swarm"] = bot_swarm
     return jsonify({
         "ok": True,
@@ -2011,6 +2296,7 @@ def movements():
         "followups": followups[:40],
         "settings": settings,
         "botSwarm": bot_swarm,
+        "trafficMath": traffic_math,
         "connectedSubmissions": submission_rows(20),
         "safety": "Auto-click path enabled. SupportRD-owned public surfaces can publish live SupportRD posts; connected provider lanes can feed the approved API bridge; unconnected outside targets stay queued.",
     })
@@ -2044,8 +2330,9 @@ def report():
     require_admin()
     report_rows = rows()
     movement_rows = [movement_for(item) for item in report_rows[:80]]
-    settings = settings_payload()
-    bot_swarm = swarm_payload(movement_rows)
+    traffic_math = bot_traffic_math_payload()
+    settings = settings_payload(traffic_math=traffic_math)
+    bot_swarm = swarm_payload(movement_rows, traffic_math=traffic_math)
     settings["bot_swarm"] = bot_swarm
     cats = {}
     statuses = {}
@@ -2061,6 +2348,7 @@ def report():
         "agent_ref": BOT_AGENT_REF,
         "settings": settings,
         "botSwarm": bot_swarm,
+        "trafficMath": traffic_math,
         "summary": {
             "total": len(report_rows),
             "categories": cats,

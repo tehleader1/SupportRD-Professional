@@ -286,6 +286,7 @@
         outreachFollowups: Array.isArray(payload.followups) ? payload.followups.slice(0, 40) : state.outreachFollowups || [],
         outreachSettings: payload.settings || state.outreachSettings || null,
         outreachBotSwarm: payload.botSwarm || payload.settings?.bot_swarm || state.outreachBotSwarm || null,
+        outreachTrafficMath: payload.trafficMath || payload.settings?.traffic_math || payload.botSwarm?.traffic_math || state.outreachTrafficMath || null,
         outreachConnectedSubmissions: Array.isArray(payload.connectedSubmissions) ? payload.connectedSubmissions.slice(0, 20) : state.outreachConnectedSubmissions || [],
         outreachLiveTick: Number(state.outreachLiveTick || 0) + 1,
         outreachUpdatedAt: new Date().toISOString()
@@ -584,6 +585,26 @@
     return `${(hours / 24).toFixed(1)} days`;
   }
 
+  function formatTrafficStamp(value){
+    if (!value) return 'waiting';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value).slice(0, 24);
+    return date.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  }
+
+  function formatTrafficAge(value){
+    if (!value) return 'waiting';
+    const time = new Date(value).getTime();
+    if (Number.isNaN(time)) return 'saved report';
+    const seconds = Math.max(0, Math.round((Date.now() - time) / 1000));
+    if (seconds < 8) return 'just now';
+    if (seconds < 60) return `${seconds}s ago`;
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 90) return `${minutes}m ago`;
+    const hours = Math.round(minutes / 60);
+    return `${hours}h ago`;
+  }
+
   function renderShopifySessionsReport(report, manualReport){
     const data = report || {};
     const manual = manualReport || {};
@@ -700,7 +721,7 @@
     try {
       const params = new URLSearchParams(location.search || '');
       if (window.top !== window || params.has('_globalBotPreview')) return;
-      await fetch(TRAFFIC_PIXEL_ENDPOINT, {
+      const response = await fetch(TRAFFIC_PIXEL_ENDPOINT, {
         method:'POST',
         cache:'no-store',
         headers:{ 'Accept':'application/json', 'Content-Type':'application/json' },
@@ -718,7 +739,25 @@
           dashboard_ping: true
         })
       }).catch(()=>null);
-    } catch {}
+      const payload = response && response.ok ? await response.json().catch(()=>null) : null;
+      const state = read();
+      write({
+        ...state,
+        trafficLastPingAt: payload?.recorded?.created_at || new Date().toISOString(),
+        trafficLastPingStatus: payload?.ok ? 'sent' : 'sent_no_payload',
+        trafficLastPingPath: payload?.recorded?.path || `${location.pathname || '/'}${location.search || ''}`
+      });
+      return payload;
+    } catch {
+      const state = read();
+      write({
+        ...state,
+        trafficLastPingAt: new Date().toISOString(),
+        trafficLastPingStatus: 'failed',
+        trafficLastPingPath: `${location.pathname || '/'}${location.search || ''}`
+      });
+      return null;
+    }
   }
 
   async function refreshTrafficSummary(sendPing){
@@ -1876,6 +1915,9 @@
     const ownedPolicy = swarm.public_owned_surface_policy || 'SupportRD-owned public pages are the proof hub the outside outreach points back to.';
     const autoScope = swarm.auto_publish_scope || 'Auto-click publishes on SupportRD-owned public pages and submits only through permitted connected channels.';
     const antiBan = swarm.anti_ban_policy || 'No account rotation, proxy tricks, speed hacks, fake engagement, or random-site autoposting.';
+    const trafficMath = swarm.traffic_math || settings.traffic_math || state.outreachTrafficMath || {};
+    const arrival = trafficMath.arrival_estimate || {};
+    const trafficInstruction = swarm.traffic_instruction || settings.traffic_math_instruction || 'Traffic math is loading into the swarm.';
     return `
       <section class="sr-global-band sr-bot-swarm">
         <div class="sr-bot-swarm-head">
@@ -1899,6 +1941,7 @@
               <p>${esc(worker.role || 'Builds a SupportRD growth route.')}</p>
               <small>${esc(worker.cadence || 'safe cadence')}</small>
               <b>${worker.can_auto_publish ? 'Auto on permitted lane' : 'Draft / connector only'}</b>
+              ${worker.traffic_math_view?.worker_focus ? `<em>${esc(worker.traffic_math_view.worker_focus)}</em>` : ''}
             </article>
           `).join('') || `
             <article class="active">
@@ -1909,6 +1952,18 @@
               <b>Draft / connector only</b>
             </article>
           `}
+        </div>
+        <div class="sr-bot-swarm-traffic">
+          <article>
+            <span>Swarm Traffic Math</span>
+            <strong>${esc(trafficMath.weak_point || 'engagement')} focus</strong>
+            <p>${esc(trafficMath.bot_summary || 'Waiting for visitor, product-interest, cart, buyer, and bounce math.')}</p>
+          </article>
+          <article>
+            <span>What The Bots Change</span>
+            <strong>${esc(trafficInstruction)}</strong>
+            <p>${arrival.ok ? `Visitor ${esc(arrival.visitor_interval_label || 'waiting')} · product interest ${esc(arrival.product_interest_interval_label || 'waiting')} · cart ${esc(arrival.add_to_cart_interval_label || 'waiting')} · buyer ${esc(arrival.conversion_interval_label || 'waiting')}.` : 'The swarm will tighten copy once the Shopify baseline is saved.'}</p>
+          </article>
         </div>
         <div class="sr-bot-swarm-guardrails">
           <b>Public SupportRD purpose: ${esc(ownedPolicy)}</b>
@@ -1993,6 +2048,15 @@
       : 'Admin token';
     const botReturns = Array.isArray(summary.latest_bot_returns) ? summary.latest_bot_returns : [];
     const latestEvents = Array.isArray(summary.latest_events) ? summary.latest_events : [];
+    const latestDashboardPings = Array.isArray(summary.latest_dashboard_pings) ? summary.latest_dashboard_pings : [];
+    const latestDashboardPing = latestDashboardPings[0] || {};
+    const liveUpdatedAt = summary.updated_at || state.trafficUpdatedAt || '';
+    const reportUpdatedAt = sessionsReport?.updated_at || manualSessionsReport.updated_at || '';
+    const lastPingAt = latestDashboardPing.created_at || state.trafficLastPingAt || '';
+    const lastPingStatus = state.trafficLastPingStatus || (latestDashboardPing.created_at ? 'seen' : 'waiting');
+    const botMath = state.outreachTrafficMath || state.outreachBotSwarm?.traffic_math || state.outreachSettings?.traffic_math || {};
+    const botArrival = botMath.arrival_estimate || {};
+    const mathSource = sessionsReport?.ok ? 'Shopify Admin report' : (manualSessionsReport.ok ? 'Manual Shopify report baseline' : 'Waiting for Shopify report baseline');
     const topPaths = Array.isArray(five.top_paths) && five.top_paths.length
       ? five.top_paths
       : ((local.find(item=>Number(item.window_minutes) === 5) || {}).top_paths || []);
@@ -2007,7 +2071,7 @@
           <div>
             <span>Actual Traffic Reader</span>
             <strong>${esc(waveScore)} wave score</strong>
-            <p>Ping button is ${enabled ? 'armed' : 'off'}. Dashboard pings are heartbeat checks only. Real visitors come from Shopify pixel events or campaign links.</p>
+            <p>Live refresh ${esc(formatTrafficAge(liveUpdatedAt))}. Ping button is ${enabled ? 'armed and updating' : 'off'}. Dashboard pings are heartbeat checks only. Real visitors come from Shopify pixel events or campaign links.</p>
           </div>
           <div class="sr-traffic-actions">
             <button class="sr-buy-btn" type="button" data-traffic-ping>${enabled ? 'Ping Armed' : 'Ping Me On Waves'}</button>
@@ -2036,7 +2100,7 @@
           <article class="sr-traffic-card">
             <span>Ping Heartbeat</span>
             <strong>${esc(heartbeat.dashboard_events || 0)} pings</strong>
-            <p>These keep the live board awake. They are separated from real visitor traffic.</p>
+            <p>${esc(lastPingStatus)} · last ping ${esc(formatTrafficAge(lastPingAt))}. These keep the live board awake and are separated from real visitor traffic.</p>
           </article>
           <article class="sr-traffic-card ${jump.significant ? 'hot' : ''}">
             <span>Significant Jump</span>
@@ -2048,6 +2112,27 @@
             <strong>${esc(reportHeadline)}</strong>
             <p>${sessionsReport?.ok ? `${esc(reportSessions)} sessions from private Shopify Analytics.` : esc(sessionsReport?.message || 'Needs Shopify Admin API read_reports access.')}</p>
           </article>` : ''}
+        </div>
+
+        <div class="sr-traffic-live-readout">
+          <article class="hero">
+            <span>Where This Is Live</span>
+            <strong>Globaltracker / Actual Traffic Reader</strong>
+            <p>This panel refreshes every ${esc(Math.round(TRAFFIC_FETCH_MS / 1000))} seconds. Live pixel rows, bot-return rows, jump score, and ping heartbeat move automatically.</p>
+            <small>Last live pull: ${esc(formatTrafficStamp(liveUpdatedAt))} · ping: ${esc(formatTrafficStamp(lastPingAt))}</small>
+          </article>
+          <article>
+            <span>Report Math Source</span>
+            <strong>${esc(mathSource)}</strong>
+            <p>${arrival.ok ? `${esc(arrival.visitors || 0)} visitors over ${esc(arrival.window_days || 0)} days = 1 visitor about every ${esc(formatTrafficInterval(arrival.visitor_interval_minutes))}.` : 'Paste/update the Shopify report to refresh the baseline math.'}</p>
+            <small>${reportUpdatedAt ? `Report saved ${esc(formatTrafficAge(reportUpdatedAt))}` : 'No saved report timestamp yet'}</small>
+          </article>
+          <article>
+            <span>Bot Math Feed</span>
+            <strong>${esc(botMath.weak_point || 'engagement')}</strong>
+            <p>${esc(botMath.bot_summary || 'The bot will receive the same visitor/cart/bounce math after the outreach payload refreshes.')}</p>
+            <small>${esc(state.outreachSettings?.traffic_math_instruction || state.outreachBotSwarm?.traffic_instruction || 'Bot instruction waiting for refresh.')}</small>
+          </article>
         </div>
 
         <div class="sr-traffic-presentation">
@@ -2408,6 +2493,13 @@
       .sr-traffic-card span,.sr-traffic-paths span{display:block;color:#61efff;font-size:.68rem;font-weight:1000;text-transform:uppercase}
       .sr-traffic-card strong{display:block;margin:.3rem 0;color:#fff;font-size:1.32rem}
       .sr-traffic-card p{color:rgba(247,251,255,.72);line-height:1.34}
+      .sr-traffic-live-readout{display:grid;grid-template-columns:1.08fr 1fr 1.25fr;gap:.65rem;margin-top:.75rem}
+      .sr-traffic-live-readout article{padding:.82rem;border-radius:.9rem;border:1px solid rgba(97,239,255,.16);background:linear-gradient(135deg,rgba(97,239,255,.08),rgba(255,255,255,.035))}
+      .sr-traffic-live-readout article.hero{border-color:rgba(154,254,143,.3);background:linear-gradient(135deg,rgba(154,254,143,.12),rgba(97,239,255,.06))}
+      .sr-traffic-live-readout span{display:block;color:#ffcf74;font-size:.68rem;font-weight:1000;text-transform:uppercase}
+      .sr-traffic-live-readout strong{display:block;margin:.24rem 0;color:#fff;font-size:1.08rem}
+      .sr-traffic-live-readout p{color:rgba(247,251,255,.74);line-height:1.34}
+      .sr-traffic-live-readout small{display:block;margin-top:.45rem;color:#9afe8f;font-weight:900;line-height:1.32}
       .sr-traffic-presentation{display:grid;grid-template-columns:1.2fr .9fr .9fr;gap:.65rem;margin-top:.75rem}
       .sr-traffic-forecast{display:grid;grid-template-columns:1.2fr repeat(5,minmax(0,.82fr));gap:.65rem;margin-top:.75rem}
       .sr-traffic-forecast article{min-height:7.7rem;padding:.78rem;border-radius:.9rem;border:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.22)}
@@ -2644,6 +2736,12 @@
       .sr-bot-swarm-grid strong{display:block;margin:.18rem 0;color:#fff;font-size:.95rem;line-height:1.06}
       .sr-bot-swarm-grid small{display:block;margin:.35rem 0;color:#dffbff;font-size:.68rem;line-height:1.2}
       .sr-bot-swarm-grid b{display:inline-flex;padding:.34rem .5rem;border-radius:999px;border:1px solid rgba(97,239,255,.2);background:rgba(97,239,255,.08);color:#dffbff;font-size:.64rem}
+      .sr-bot-swarm-grid em{display:block;margin-top:.45rem;color:#9afe8f;font-style:normal;font-size:.68rem;line-height:1.25}
+      .sr-bot-swarm-traffic{position:relative;z-index:1;display:grid;grid-template-columns:1fr 1.2fr;gap:.52rem;margin-top:.72rem}
+      .sr-bot-swarm-traffic article{padding:.72rem;border-radius:.78rem;border:1px solid rgba(97,239,255,.18);background:rgba(97,239,255,.055)}
+      .sr-bot-swarm-traffic span{display:block;color:#61efff;font-size:.68rem;font-weight:1000;text-transform:uppercase}
+      .sr-bot-swarm-traffic strong{display:block;margin:.2rem 0;color:#fff;font-size:.94rem;line-height:1.16}
+      .sr-bot-swarm-traffic p{color:rgba(247,251,255,.72);line-height:1.32}
       .sr-bot-swarm-guardrails{position:relative;z-index:1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.45rem;margin-top:.72rem}
       .sr-bot-swarm-guardrails b{padding:.55rem .65rem;border-radius:.68rem;border:1px solid rgba(255,210,122,.18);background:rgba(255,210,122,.07);color:#ffefb3;font-size:.72rem;line-height:1.28}
       .sr-bot-owned-posting{position:relative;overflow:hidden;border-color:rgba(97,239,255,.22);background:linear-gradient(135deg,rgba(5,12,25,.96),rgba(9,24,33,.9))}
@@ -2679,7 +2777,7 @@
       .sr-connect-submit-rail>b.warn{color:#ffe4a6;background:rgba(255,210,122,.1);border-color:rgba(255,210,122,.26)}
       .sr-bot-queue .sr-global-grid{max-height:32rem;overflow:auto;padding-right:.15rem}
       .sr-bot-queue small{display:block;margin-top:.5rem;color:#9ff9ff;line-height:1.35}
-      @media(max-width:1120px){.sr-bot-live-grid,.sr-bot-owned-grid,.sr-bot-swarm-head,.sr-bot-exec-main,.sr-bot-builder-grid,.sr-bot-placement,.sr-bot-attention-map,.sr-bot-diversify-board,.sr-bot-attention-detail-head,.sr-visitor-fix-route,.sr-traffic-head,.sr-traffic-grid,.sr-traffic-presentation,.sr-traffic-forecast,.sr-traffic-report,.sr-traffic-manual,.sr-bot-site-live,.sr-money-live-grid,.sr-connect-submit-rail{grid-template-columns:1fr}.sr-traffic-actions{justify-content:flex-start}.sr-bot-builder-head{display:grid}.sr-bot-builder-meter{justify-items:start}.sr-bot-orbit{margin:auto}.sr-bot-live-frame{height:22rem}.sr-bot-pipeline{grid-template-columns:repeat(2,minmax(0,1fr))}.sr-bot-phase-rail,.sr-bot-placement-grid,.sr-bot-attention-spokes,.sr-bot-diversify-targets,.sr-traffic-feed,.sr-bot-site-grid,.sr-bot-attention-route-grid,.sr-visitor-diagnosis-grid,.sr-money-live-routes,.sr-bot-swarm-grid,.sr-bot-swarm-guardrails{grid-template-columns:repeat(2,minmax(0,1fr))}.sr-traffic-windows{grid-template-columns:repeat(3,minmax(0,1fr))}.sr-traffic-report-chart{grid-template-columns:repeat(4,minmax(0,1fr))}}
+      @media(max-width:1120px){.sr-bot-live-grid,.sr-bot-owned-grid,.sr-bot-swarm-head,.sr-bot-swarm-traffic,.sr-bot-exec-main,.sr-bot-builder-grid,.sr-bot-placement,.sr-bot-attention-map,.sr-bot-diversify-board,.sr-bot-attention-detail-head,.sr-visitor-fix-route,.sr-traffic-head,.sr-traffic-grid,.sr-traffic-live-readout,.sr-traffic-presentation,.sr-traffic-forecast,.sr-traffic-report,.sr-traffic-manual,.sr-bot-site-live,.sr-money-live-grid,.sr-connect-submit-rail{grid-template-columns:1fr}.sr-traffic-actions{justify-content:flex-start}.sr-bot-builder-head{display:grid}.sr-bot-builder-meter{justify-items:start}.sr-bot-orbit{margin:auto}.sr-bot-live-frame{height:22rem}.sr-bot-pipeline{grid-template-columns:repeat(2,minmax(0,1fr))}.sr-bot-phase-rail,.sr-bot-placement-grid,.sr-bot-attention-spokes,.sr-bot-diversify-targets,.sr-traffic-feed,.sr-bot-site-grid,.sr-bot-attention-route-grid,.sr-visitor-diagnosis-grid,.sr-money-live-routes,.sr-bot-swarm-grid,.sr-bot-swarm-guardrails{grid-template-columns:repeat(2,minmax(0,1fr))}.sr-traffic-windows{grid-template-columns:repeat(3,minmax(0,1fr))}.sr-traffic-report-chart{grid-template-columns:repeat(4,minmax(0,1fr))}}
     `;
     document.head.appendChild(style);
   }
