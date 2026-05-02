@@ -72,6 +72,23 @@ SHOPIFY_WEBHOOK_SECRET = os.environ.get("SHOPIFY_WEBHOOK_SECRET", "")
 SHOPIFY_PLAN_VARIANT_MAP_JSON = os.environ.get("SHOPIFY_PLAN_VARIANT_MAP_JSON", "")
 SHOPIFY_PLAN_SKU_MAP_JSON = os.environ.get("SHOPIFY_PLAN_SKU_MAP_JSON", "")
 GLOBALTRACKER_RESET_STAMP = os.environ.get("GLOBALTRACKER_RESET_STAMP", "20260502_fresh_launch_reset_01")
+SUPPORTRD_POSTING_MODE = os.environ.get("SUPPORTRD_POSTING_MODE", "draft_only").strip().lower()
+OUTREACH_ADMIN_TOKEN = (
+    os.environ.get("OUTREACH_ADMIN_TOKEN")
+    or os.environ.get("GLOBALTRACKER_ADMIN_TOKEN")
+    or os.environ.get("ADMIN_API_TOKEN")
+    or ""
+)
+SUPPORTRD_OWNED_POSTING_MODES = {
+    "owner_approved",
+    "owned_approved",
+    "auto_owned",
+    "auto_approved",
+    "automatic",
+    "auto",
+    "posting",
+    "live",
+}
 STUDIO_STORAGE_DIR = os.environ.get("STUDIO_STORAGE_DIR", os.path.join(app.root_path, "studio_data"))
 VALID_SUBSCRIPTION_PLANS = {
     "free",
@@ -9687,6 +9704,104 @@ def account_password_reset_confirm():
 @app.route("/api/local-remote/faq/posts")
 def local_remote_faq_posts():
   return {"ok": True, "posts": list_faq_developer_posts(limit=request.args.get("limit") or 7)}
+
+
+def _support_rd_owned_posting_enabled():
+    return SUPPORTRD_POSTING_MODE in SUPPORTRD_OWNED_POSTING_MODES
+
+
+def _outreach_owner_authorized():
+    try:
+        if is_admin():
+            return True
+    except:
+        pass
+    try:
+        if is_local_dev_ip(client_ip()):
+            return True
+    except:
+        pass
+    supplied = (
+        request.headers.get("X-Outreach-Admin-Token")
+        or request.headers.get("X-Globaltracker-Admin-Token")
+        or request.args.get("token")
+        or ""
+    ).strip()
+    auth = (request.headers.get("Authorization") or "").strip()
+    if auth.lower().startswith("bearer "):
+        supplied = auth[7:].strip()
+    return bool(OUTREACH_ADMIN_TOKEN and supplied and supplied == OUTREACH_ADMIN_TOKEN)
+
+
+def _owned_post_message(body):
+    title = (body.get("title") or body.get("subject") or "SupportRD growth update").strip()[:160]
+    surface = (body.get("surface") or "SupportRD FAQ Lounge / Developer Feed").strip()[:120]
+    draft = (
+        body.get("message")
+        or body.get("draft")
+        or body.get("copy")
+        or body.get("movement")
+        or body.get("hook")
+        or ""
+    ).strip()
+    if not draft:
+        return "", title, surface
+    source = (body.get("source") or body.get("source_id") or body.get("campaign") or "").strip()[:120]
+    lines = [
+        f"{title}",
+        "",
+        draft[:1600],
+        "",
+        "SupportRD.com New Hair AI! New Hair AI Premiums. New Hair Scanner. New Hair Analysis.",
+        "Posted by the SupportRD Growth Bot on behalf of Main Developer Anthony.",
+    ]
+    if source:
+        lines.append(f"Campaign source: {source}")
+    lines.append(f"Owned surface: {surface}")
+    return "\n".join(lines).strip()[:2000], title, surface
+
+
+@app.route("/api/outreach/owned-posts")
+def outreach_owned_posts():
+    return {
+        "ok": True,
+        "surface": "support_rd_faq_developer_feed",
+        "posting_mode": SUPPORTRD_POSTING_MODE,
+        "owned_posting_enabled": _support_rd_owned_posting_enabled(),
+        "auto_approval_scope": "SupportRD-owned/internal surfaces only",
+        "external_channel_status": "third_party_social_comment_email_requires_connected_permitted_channel",
+        "posts": list_faq_developer_posts(limit=request.args.get("limit") or 12),
+    }
+
+
+@app.route("/api/outreach/owned-posts/publish", methods=["POST"])
+def outreach_owned_posts_publish():
+    if not _support_rd_owned_posting_enabled():
+        return {
+            "ok": False,
+            "error": "owned_posting_not_enabled",
+            "posting_mode": SUPPORTRD_POSTING_MODE,
+            "message": "Set SUPPORTRD_POSTING_MODE=auto_owned or owner_approved to publish to SupportRD-owned surfaces.",
+        }, 409
+    if not _outreach_owner_authorized():
+        return {
+            "ok": False,
+            "error": "owner_authorization_required",
+            "message": "Use the admin session or X-Outreach-Admin-Token for owned posting.",
+        }, 401
+    body = request.json if request.is_json else {}
+    message, title, surface = _owned_post_message(body)
+    if not message:
+        return {"ok": False, "error": "message_required"}, 400
+    saved = append_faq_developer_post("growthbot@supportrd.com", "SupportRD Growth Bot", message)
+    return {
+        "ok": bool(saved),
+        "surface": surface,
+        "title": title,
+        "posting_mode": SUPPORTRD_POSTING_MODE,
+        "status": "published_owned_surface" if saved else "publish_failed",
+        "posts": list_faq_developer_posts(limit=12),
+    }, 200 if saved else 500
 
 
 @app.route("/api/local-remote/faq/posts", methods=["POST"])

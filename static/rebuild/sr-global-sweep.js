@@ -10,6 +10,8 @@
   const OUTREACH_TICK_ENDPOINT = '/api/outreach/tick';
   const OUTREACH_EXPAND_ENDPOINT = '/api/outreach/expand';
   const OUTREACH_FOLLOWUPS_ENDPOINT = '/api/outreach/followups';
+  const OUTREACH_OWNED_POSTS_ENDPOINT = '/api/outreach/owned-posts';
+  const OUTREACH_OWNER_TOKEN_KEY = 'srOutreachOwnerToken';
   const LIVE_SUPPORT_RD_ORIGIN = 'https://supportrd.com';
   const IS_LOCAL_PREVIEW = ['127.0.0.1', 'localhost', '::1'].includes(window.location.hostname || '');
   const TRAFFIC_ORIGIN = IS_LOCAL_PREVIEW ? LIVE_SUPPORT_RD_ORIGIN : '';
@@ -57,6 +59,52 @@
   function write(next){
     localStorage.setItem(STORE_KEY, JSON.stringify(next || {}));
     return next;
+  }
+
+  function outreachOwnerToken(){
+    try { return localStorage.getItem(OUTREACH_OWNER_TOKEN_KEY) || ''; }
+    catch { return ''; }
+  }
+
+  function outreachAuthHeaders(json){
+    const headers = { 'Accept':'application/json' };
+    if (json) headers['Content-Type'] = 'application/json';
+    const token = outreachOwnerToken();
+    if (token) headers['X-Outreach-Admin-Token'] = token;
+    return headers;
+  }
+
+  function saveOutreachOwnerToken(){
+    const token = window.prompt('Paste the outreach admin token for SupportRD-owned posting.');
+    if (token === null) return false;
+    try {
+      const clean = String(token || '').trim();
+      if (clean) localStorage.setItem(OUTREACH_OWNER_TOKEN_KEY, clean);
+      else localStorage.removeItem(OUTREACH_OWNER_TOKEN_KEY);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function postOutreachAdmin(url, body){
+    const options = {
+      method:'POST',
+      cache:'no-store',
+      headers: outreachAuthHeaders(!!body)
+    };
+    if (body) options.body = JSON.stringify(body);
+    let res = await fetch(url, options);
+    if (res.status === 401 && saveOutreachOwnerToken()) {
+      const retry = {
+        method:'POST',
+        cache:'no-store',
+        headers: outreachAuthHeaders(!!body)
+      };
+      if (body) retry.body = JSON.stringify(body);
+      res = await fetch(url, retry);
+    }
+    return res;
   }
 
   function normalize(value){
@@ -172,8 +220,8 @@
   async function refreshOutreachMovements(pushNow){
     try {
       if (pushNow) {
-        await fetch(OUTREACH_EXPAND_ENDPOINT, { method:'POST', cache:'no-store', headers:{ 'Accept':'application/json' } }).catch(()=>null);
-        await fetch(OUTREACH_TICK_ENDPOINT, { method:'POST', cache:'no-store', headers:{ 'Accept':'application/json' } }).catch(()=>null);
+        await postOutreachAdmin(OUTREACH_EXPAND_ENDPOINT).catch(()=>null);
+        await postOutreachAdmin(OUTREACH_TICK_ENDPOINT).catch(()=>null);
       }
       const res = await fetch(OUTREACH_MOVEMENTS_ENDPOINT, { cache:'no-store', headers:{ 'Accept':'application/json' } });
       if (!res.ok) return null;
@@ -206,15 +254,10 @@
     const state = read();
     const active = currentMovement(state);
     try {
-      const res = await fetch(OUTREACH_FOLLOWUPS_ENDPOINT, {
-        method:'POST',
-        cache:'no-store',
-        headers:{ 'Accept':'application/json', 'Content-Type':'application/json' },
-        body: JSON.stringify({
-          id: active.id,
-          key: active.key,
-          context: context || active.draft || active.movement || active.focus_reason || ''
-        })
+      const res = await postOutreachAdmin(OUTREACH_FOLLOWUPS_ENDPOINT, {
+        id: active.id,
+        key: active.key,
+        context: context || active.draft || active.movement || active.focus_reason || ''
       });
       if (res.ok) {
         const payload = await res.json();
@@ -228,13 +271,93 @@
   async function approveSmartFollowup(id){
     if (!id) return null;
     try {
-      await fetch(`${OUTREACH_FOLLOWUPS_ENDPOINT}/${encodeURIComponent(id)}/approve`, {
-        method:'POST',
+      await postOutreachAdmin(`${OUTREACH_FOLLOWUPS_ENDPOINT}/${encodeURIComponent(id)}/approve`);
+    } catch {}
+    return refreshOutreachMovements(false);
+  }
+
+  async function refreshOwnedPosts(){
+    try {
+      const res = await fetch(OUTREACH_OWNED_POSTS_ENDPOINT, {
         cache:'no-store',
         headers:{ 'Accept':'application/json' }
       });
-    } catch {}
-    return refreshOutreachMovements(false);
+      if (!res.ok) return null;
+      const payload = await res.json();
+      const state = read();
+      const next = {
+        ...state,
+        outreachOwnedPosts: Array.isArray(payload.posts) ? payload.posts.slice(0, 12) : [],
+        outreachOwnedStatus: {
+          posting_mode: payload.posting_mode || 'draft_only',
+          owned_posting_enabled: !!payload.owned_posting_enabled,
+          auto_approval_scope: payload.auto_approval_scope || 'SupportRD-owned surfaces',
+          external_channel_status: payload.external_channel_status || ''
+        },
+        outreachOwnedUpdatedAt: new Date().toISOString()
+      };
+      write(next);
+      if (document.querySelector('[data-panel="globaltracker"]')) root.renderFunctionalPanel?.('globaltracker');
+      return next;
+    } catch {
+      return null;
+    }
+  }
+
+  async function publishOwnedPost(){
+    const state = read();
+    const active = currentMovement(state);
+    const payload = {
+      title: active.title || 'SupportRD growth update',
+      message: fullDraftFor(active),
+      movement: active.movement || '',
+      source: active.key || active.id || active.category || '',
+      campaign: websiteTargetFor(active).campaign || '',
+      surface: 'SupportRD FAQ Lounge / Developer Feed'
+    };
+    try {
+      let res = await fetch(`${OUTREACH_OWNED_POSTS_ENDPOINT}/publish`, {
+        method:'POST',
+        cache:'no-store',
+        headers: outreachAuthHeaders(true),
+        body: JSON.stringify(payload)
+      });
+      if (res.status === 401 && saveOutreachOwnerToken()) {
+        res = await fetch(`${OUTREACH_OWNED_POSTS_ENDPOINT}/publish`, {
+          method:'POST',
+          cache:'no-store',
+          headers: outreachAuthHeaders(true),
+          body: JSON.stringify(payload)
+        });
+      }
+      const data = await res.json().catch(()=>({ ok:false, error:`http_${res.status}` }));
+      const next = {
+        ...read(),
+        outreachOwnedPublishResult: {
+          ok: !!data.ok,
+          status: data.status || data.error || `http_${res.status}`,
+          title: data.title || payload.title,
+          at: new Date().toISOString()
+        },
+        outreachOwnedPosts: Array.isArray(data.posts) ? data.posts.slice(0,12) : (read().outreachOwnedPosts || [])
+      };
+      write(next);
+      if (document.querySelector('[data-panel="globaltracker"]')) root.renderFunctionalPanel?.('globaltracker');
+      return data;
+    } catch {
+      const next = {
+        ...read(),
+        outreachOwnedPublishResult: {
+          ok:false,
+          status:'publish_request_failed',
+          title: payload.title,
+          at: new Date().toISOString()
+        }
+      };
+      write(next);
+      if (document.querySelector('[data-panel="globaltracker"]')) root.renderFunctionalPanel?.('globaltracker');
+      return null;
+    }
   }
 
   function trafficClientId(){
@@ -1229,6 +1352,56 @@
     `;
   }
 
+  function renderOwnedPostingPanel(state, active){
+    const settings = state.outreachSettings || {};
+    const owned = state.outreachOwnedStatus || {};
+    const enabled = !!(owned.owned_posting_enabled || settings.owned_posting_enabled);
+    const mode = owned.posting_mode || settings.posting_mode || 'draft_only';
+    const posts = Array.isArray(state.outreachOwnedPosts) ? state.outreachOwnedPosts : [];
+    const result = state.outreachOwnedPublishResult || {};
+    const currentDraft = fullDraftFor(active);
+    return `
+      <section class="sr-global-band sr-bot-owned-posting ${enabled ? 'live' : 'locked'}">
+        <div class="sr-global-band-head">
+          <span>Owned Posting Mode</span>
+          <strong>${enabled ? 'SupportRD internal auto-approval is live' : 'SupportRD internal posting is locked'}</strong>
+        </div>
+        <div class="sr-bot-owned-grid">
+          <article>
+            <span>Current Mode</span>
+            <strong>${esc(mode)}</strong>
+            <p>${esc(owned.auto_approval_scope || settings.auto_approval_scope || 'SupportRD-owned/internal surfaces only')}</p>
+            <small>${esc(owned.external_channel_status || settings.permission_open_scope || 'Outside websites/social channels stay ready until a permitted connected channel exists.')}</small>
+            <div class="sr-bot-owned-actions">
+              <button type="button" data-owned-publish>${enabled ? 'Publish Current Owned Post' : 'Test Publish Setup'}</button>
+              <button type="button" data-owned-refresh>Refresh Owned Feed</button>
+              <button type="button" data-owned-token>${outreachOwnerToken() ? 'Update Token' : 'Set Token'}</button>
+            </div>
+            ${result.status ? `<b class="sr-bot-owned-result ${result.ok ? 'ok' : 'bad'}">${esc(result.status)} · ${esc(result.title || '')}</b>` : ''}
+          </article>
+          <article>
+            <span>Post Being Prepared</span>
+            <strong>${esc(active.title || 'SupportRD growth update')}</strong>
+            <pre>${esc(currentDraft.slice(0, 900))}</pre>
+          </article>
+          <article>
+            <span>Live SupportRD Feed</span>
+            <strong>${esc(posts.length)} recent owned posts</strong>
+            <div class="sr-bot-owned-list">
+              ${posts.map(post=>`
+                <section>
+                  <b>${esc(post.display_name || 'SupportRD')}</b>
+                  <p>${esc(post.message || '')}</p>
+                  <small>${esc(post.created_at || '')}</small>
+                </section>
+              `).join('') || '<section><b>No owned bot posts yet</b><p>When enabled, the bot can publish approved SupportRD updates into the FAQ/developer feed.</p></section>'}
+            </div>
+          </article>
+        </div>
+      </section>
+    `;
+  }
+
   function renderTrafficPingPanel(state){
     const summary = state.trafficSummary || {};
     const shopify = Array.isArray(summary.shopify) ? summary.shopify : [];
@@ -1352,6 +1525,8 @@
         ${renderLiveFocusResults(state, active)}
 
         ${renderSmartFollowupPanel(state, active)}
+
+        ${renderOwnedPostingPanel(state, active)}
 
         ${renderTrafficPingPanel(state)}
 
@@ -1675,9 +1850,28 @@
       .sr-bot-preview-card p{color:rgba(247,251,255,.78);line-height:1.4}
       .sr-bot-preview-card a{display:inline-flex;margin-top:.45rem;color:#07101d;background:#61efff;border-radius:.65rem;padding:.45rem .7rem;font-weight:1000;text-decoration:none}
       .sr-bot-live-frame{width:100%;height:17rem;border:1px solid rgba(255,255,255,.12);border-radius:.8rem;background:#07101d}
+      .sr-bot-owned-posting{position:relative;overflow:hidden;border-color:rgba(97,239,255,.22);background:linear-gradient(135deg,rgba(5,12,25,.96),rgba(9,24,33,.9))}
+      .sr-bot-owned-posting.live{border-color:rgba(154,254,143,.34);box-shadow:0 0 0 1px rgba(154,254,143,.08),0 24px 70px rgba(0,0,0,.26)}
+      .sr-bot-owned-posting:before{content:"";position:absolute;left:-20%;right:-20%;top:0;height:2px;background:linear-gradient(90deg,transparent,#61efff,#9afe8f,transparent);animation:srBotRail 2.4s linear infinite}
+      .sr-bot-owned-grid{position:relative;z-index:1;display:grid;grid-template-columns:minmax(15rem,.8fr) minmax(0,1.05fr) minmax(16rem,.9fr);gap:.75rem}
+      .sr-bot-owned-grid article{padding:.82rem;border-radius:.82rem;border:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.25);min-width:0}
+      .sr-bot-owned-grid span{display:block;color:#61efff;font-size:.72rem;font-weight:1000;text-transform:uppercase;letter-spacing:.08em}
+      .sr-bot-owned-grid strong{display:block;margin:.3rem 0;color:#fff;font-size:1.15rem;line-height:1.05}
+      .sr-bot-owned-grid p,.sr-bot-owned-grid small{color:rgba(247,251,255,.72);line-height:1.35}
+      .sr-bot-owned-grid pre{max-height:17rem;overflow:auto;margin:.6rem 0 0;padding:.7rem;border-radius:.68rem;border:1px solid rgba(97,239,255,.16);background:rgba(0,0,0,.4);color:#dffbff;font:800 .78rem/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap}
+      .sr-bot-owned-actions{display:flex;flex-wrap:wrap;gap:.45rem;margin:.7rem 0}
+      .sr-bot-owned-actions button{min-height:2.25rem;padding:.48rem .68rem;border-radius:.62rem;border:1px solid rgba(97,239,255,.22);background:rgba(97,239,255,.12);color:#dffbff;font-weight:1000;cursor:pointer}
+      .sr-bot-owned-actions button:first-child{background:#9afe8f;color:#07101d;border-color:#9afe8f}
+      .sr-bot-owned-result{display:block;margin-top:.55rem;padding:.5rem .62rem;border-radius:.62rem;border:1px solid rgba(255,255,255,.12);font-size:.72rem;line-height:1.25}
+      .sr-bot-owned-result.ok{color:#eaffdf;background:rgba(154,254,143,.12);border-color:rgba(154,254,143,.3)}
+      .sr-bot-owned-result.bad{color:#ffd6d6;background:rgba(255,90,90,.12);border-color:rgba(255,90,90,.28)}
+      .sr-bot-owned-list{display:grid;gap:.45rem;max-height:19rem;overflow:auto;padding-right:.1rem}
+      .sr-bot-owned-list section{padding:.55rem;border-radius:.62rem;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.045)}
+      .sr-bot-owned-list b{display:block;color:#fff;font-size:.78rem}
+      .sr-bot-owned-list p{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;margin:.25rem 0;color:rgba(247,251,255,.75);font-size:.75rem}
       .sr-bot-queue .sr-global-grid{max-height:32rem;overflow:auto;padding-right:.15rem}
       .sr-bot-queue small{display:block;margin-top:.5rem;color:#9ff9ff;line-height:1.35}
-      @media(max-width:1120px){.sr-bot-live-grid,.sr-bot-exec-main,.sr-bot-builder-grid,.sr-bot-placement,.sr-bot-attention-map,.sr-bot-diversify-board,.sr-traffic-head,.sr-traffic-grid,.sr-traffic-presentation,.sr-traffic-report,.sr-traffic-manual,.sr-bot-site-live{grid-template-columns:1fr}.sr-traffic-actions{justify-content:flex-start}.sr-bot-builder-head{display:grid}.sr-bot-builder-meter{justify-items:start}.sr-bot-orbit{margin:auto}.sr-bot-live-frame{height:22rem}.sr-bot-pipeline{grid-template-columns:repeat(2,minmax(0,1fr))}.sr-bot-phase-rail,.sr-bot-placement-grid,.sr-bot-attention-spokes,.sr-bot-diversify-targets,.sr-traffic-feed,.sr-bot-site-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.sr-traffic-windows{grid-template-columns:repeat(3,minmax(0,1fr))}.sr-traffic-report-chart{grid-template-columns:repeat(4,minmax(0,1fr))}}
+      @media(max-width:1120px){.sr-bot-live-grid,.sr-bot-owned-grid,.sr-bot-exec-main,.sr-bot-builder-grid,.sr-bot-placement,.sr-bot-attention-map,.sr-bot-diversify-board,.sr-traffic-head,.sr-traffic-grid,.sr-traffic-presentation,.sr-traffic-report,.sr-traffic-manual,.sr-bot-site-live{grid-template-columns:1fr}.sr-traffic-actions{justify-content:flex-start}.sr-bot-builder-head{display:grid}.sr-bot-builder-meter{justify-items:start}.sr-bot-orbit{margin:auto}.sr-bot-live-frame{height:22rem}.sr-bot-pipeline{grid-template-columns:repeat(2,minmax(0,1fr))}.sr-bot-phase-rail,.sr-bot-placement-grid,.sr-bot-attention-spokes,.sr-bot-diversify-targets,.sr-traffic-feed,.sr-bot-site-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.sr-traffic-windows{grid-template-columns:repeat(3,minmax(0,1fr))}.sr-traffic-report-chart{grid-template-columns:repeat(4,minmax(0,1fr))}}
     `;
     document.head.appendChild(style);
   }
@@ -1702,6 +1896,19 @@
       if (approveFollowup) {
         event.preventDefault();
         approveSmartFollowup(approveFollowup.getAttribute('data-followup-approve'));
+      }
+      if (event.target.closest('[data-owned-publish]')) {
+        event.preventDefault();
+        publishOwnedPost();
+      }
+      if (event.target.closest('[data-owned-refresh]')) {
+        event.preventDefault();
+        refreshOwnedPosts();
+      }
+      if (event.target.closest('[data-owned-token]')) {
+        event.preventDefault();
+        saveOutreachOwnerToken();
+        refreshOwnedPosts();
       }
       if (event.target.closest('[data-traffic-ping]')) {
         event.preventDefault();
@@ -1764,6 +1971,7 @@
     bindEvents();
     loadGlobalSweep();
     refreshOutreachMovements(false);
+    refreshOwnedPosts();
     refreshTrafficSummary(false);
     if (root.__globalSweepTimer) clearInterval(root.__globalSweepTimer);
     root.__globalSweepTimer = setInterval(loadGlobalSweep, SWEEP_MS);
@@ -1773,6 +1981,8 @@
     root.__globalBotPhaseTimer = setInterval(liveBotPhaseStep, BOT_PHASE_MS);
     if (root.__globalBotFetchTimer) clearInterval(root.__globalBotFetchTimer);
     root.__globalBotFetchTimer = setInterval(()=>refreshOutreachMovements(false), BOT_FETCH_MS);
+    if (root.__globalOwnedPostsTimer) clearInterval(root.__globalOwnedPostsTimer);
+    root.__globalOwnedPostsTimer = setInterval(refreshOwnedPosts, BOT_FETCH_MS);
     if (root.__globalTrafficTimer) clearInterval(root.__globalTrafficTimer);
     root.__globalTrafficTimer = setInterval(()=>refreshTrafficSummary(false), TRAFFIC_FETCH_MS);
   }
@@ -1780,6 +1990,8 @@
   root.runGlobalSweep = runGlobalSweep;
   root.refreshGlobalSweepOpportunities = refreshOpportunities;
   root.refreshOutreachMovements = refreshOutreachMovements;
+  root.refreshOwnedPosts = refreshOwnedPosts;
+  root.publishOwnedPost = publishOwnedPost;
   root.refreshTrafficSummary = refreshTrafficSummary;
   root.initGlobalSweep = initGlobalSweep;
 })();

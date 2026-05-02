@@ -19,6 +19,18 @@ ADMIN_TOKEN = (
     or os.environ.get("ADMIN_API_TOKEN")
     or ""
 )
+SUPPORTRD_POSTING_MODE = os.environ.get("SUPPORTRD_POSTING_MODE", "draft_only").strip().lower()
+OWNED_POSTING_MODES = {
+    "owner_approved",
+    "owned_approved",
+    "auto_owned",
+    "auto_approved",
+    "automatic",
+    "auto",
+    "posting",
+    "live",
+}
+PERMISSION_OPEN_TARGETS_ENABLED = os.environ.get("SUPPORTRD_PERMISSION_OPEN_TARGETS", "true").strip().lower() != "false"
 FOCUS_MODE = os.environ.get("OUTREACH_FOCUS_MODE", "comments_story_family").strip().lower()
 FOCUS_TERMS = [
     "comment",
@@ -188,6 +200,7 @@ BOT_SETTINGS = {
     "mode": "backend_comments_story_family_engine",
     "draft_mode_only": True,
     "approval_required": True,
+    "owned_auto_approval": SUPPORTRD_POSTING_MODE in OWNED_POSTING_MODES,
     "behalf_mode": "intelligent_followup_drafts_with_explicit_approval",
     "attention_low_threshold": 62,
     "attention_goal": "Hone in on owner-reviewed comments, story posts, family letters, and community-safe posts while diversifying placements when attention is weak.",
@@ -791,17 +804,37 @@ def website_target_for(item, lane=None):
 
 
 def settings_payload():
+    owned_enabled = SUPPORTRD_POSTING_MODE in OWNED_POSTING_MODES
+    allowed_work = list(BOT_SETTINGS.get("allowed_work", []))
+    if owned_enabled:
+        allowed_work.append("owned_support_rd_publish")
+    blocked_without_channel = [
+        "external_social_post",
+        "external_comment",
+        "external_email",
+        "external_form_submit",
+        "third_party_account_action",
+    ]
     return {
         **BOT_SETTINGS,
+        "draft_mode_only": not owned_enabled,
+        "posting_mode": SUPPORTRD_POSTING_MODE,
+        "owned_posting_enabled": owned_enabled,
+        "owned_auto_approval": owned_enabled,
+        "permission_open_targets_enabled": PERMISSION_OPEN_TARGETS_ENABLED,
+        "auto_approval_scope": "SupportRD-owned/internal surfaces only",
+        "permission_open_scope": "Public listing/submission/free-post targets are prioritized as ready targets, but third-party posting still requires a permitted connected channel.",
+        "allowed_work": allowed_work,
+        "blocked_without_connected_channel": blocked_without_channel,
         "focus_mode": FOCUS_MODE,
         "focus_priority": "comments, story posts, family letters, community-safe posts",
         "focus_terms": FOCUS_TERMS,
         "promo_hooks": SUPPORT_RD_PROMO_HOOKS,
         "explicit_approval_path": [
             "bot drafts follow-up",
-            "owner reviews",
-            "owner clicks approve",
-            "owned SupportRD surfaces can publish internally when connected",
+            "owner approval is automatic for SupportRD-owned surfaces when posting mode is enabled",
+            "owned SupportRD surfaces can publish internally",
+            "permission-open external targets move to ready queue",
             "external websites/social accounts remain approved-ready until a permitted account/API is connected",
         ],
         "website_targets": WEBSITE_TARGETS,
@@ -814,7 +847,7 @@ def settings_payload():
             }
             for lane in ATTENTION_LANES
         ],
-        "safety": "The bot may draft, queue, diagram, and log. It does not post, comment, email, submit, or use accounts without owner approval.",
+        "safety": "The bot may draft, queue, diagram, log, and publish internally to SupportRD-owned surfaces when posting mode is enabled. External websites/social accounts still require a permitted connected channel.",
     }
 
 
