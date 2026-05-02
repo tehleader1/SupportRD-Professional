@@ -4,6 +4,8 @@ import os
 import sqlite3
 import threading
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 
 outreach_engine_bp = Blueprint("outreach_engine", __name__)
@@ -33,6 +35,19 @@ OWNED_POSTING_MODES = {
 }
 PERMISSION_OPEN_TARGETS_ENABLED = os.environ.get("SUPPORTRD_PERMISSION_OPEN_TARGETS", "true").strip().lower() != "false"
 FOCUS_MODE = os.environ.get("OUTREACH_FOCUS_MODE", "comments_story_family").strip().lower()
+CONNECT_API_URL = (
+    os.environ.get("SUPPORTRD_CONNECT_API_URL")
+    or os.environ.get("OUTREACH_CONNECT_API_URL")
+    or os.environ.get("GLOBALTRACKER_CONNECT_API_URL")
+    or ""
+).strip()
+CONNECT_API_TOKEN = (
+    os.environ.get("SUPPORTRD_CONNECT_API_TOKEN")
+    or os.environ.get("OUTREACH_CONNECT_API_TOKEN")
+    or os.environ.get("GLOBALTRACKER_CONNECT_API_TOKEN")
+    or ""
+).strip()
+CONNECT_API_TIMEOUT_SECONDS = int(os.environ.get("OUTREACH_CONNECT_API_TIMEOUT_SECONDS", "12"))
 FOCUS_TERMS = [
     "comment",
     "story",
@@ -243,6 +258,19 @@ def db():
         "source_key TEXT NOT NULL,"
         "followup_json TEXT NOT NULL,"
         "status TEXT DEFAULT 'queued_for_owner_review',"
+        "created_at TEXT NOT NULL,"
+        "updated_at TEXT NOT NULL)"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS outreach_connected_submissions ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "source_type TEXT NOT NULL,"
+        "source_id TEXT,"
+        "provider TEXT NOT NULL,"
+        "target_json TEXT NOT NULL,"
+        "draft_json TEXT NOT NULL,"
+        "status TEXT NOT NULL,"
+        "response_json TEXT NOT NULL,"
         "created_at TEXT NOT NULL,"
         "updated_at TEXT NOT NULL)"
     )
@@ -906,6 +934,282 @@ def website_target_for(item, lane=None):
     return target
 
 
+def connected_provider_for_target(target):
+    domain = str((target or {}).get("domain") or "").lower()
+    if domain == "supportrd.com" or domain.endswith(".supportrd.com"):
+        return "owned_support_rd"
+    if "wordpress" in domain:
+        return "wordpress_api"
+    if domain in {"linkedin.com", "instagram.com", "youtube.com", "tiktok.com", "nextdoor.com"}:
+        return "social_platform_api"
+    if any(term in domain for term in ["cpcc.edu", "ncworks.gov", "charlotteworks.com", "charlotte.edu", "joinhandshake.com"]):
+        return "email_or_form_api"
+    if any(term in domain for term in ["patch.com", "medium.com", "substack.com", "featured.com", "producthunt.com"]):
+        return "publisher_api"
+    if any(term in domain for term in ["eventbrite.com", "meetup.com"]):
+        return "event_listing_api"
+    if any(term in domain for term in ["yelp.com", "google.com/business"]):
+        return "business_listing_api"
+    return "connect_api"
+
+
+def connected_channel_status():
+    owned_enabled = SUPPORTRD_POSTING_MODE in OWNED_POSTING_MODES
+    generic_connected = bool(CONNECT_API_URL)
+    return {
+        "updated_at": utc(),
+        "approval_mode": "owner_clicked_connected_submit",
+        "connected_api_configured": generic_connected,
+        "connect_api_url_configured": generic_connected,
+        "connect_api_token_configured": bool(CONNECT_API_TOKEN),
+        "setup_env": [
+            "SUPPORTRD_CONNECT_API_URL",
+            "SUPPORTRD_CONNECT_API_TOKEN",
+        ],
+        "channels": [
+            {
+                "provider": "owned_support_rd",
+                "label": "SupportRD owned feed",
+                "connected": owned_enabled,
+                "status": "connected" if owned_enabled else "set_SUPPORTRD_POSTING_MODE_auto_owned",
+                "scope": "FAQ Lounge, Growth Hub, hair-problems, and SupportRD-owned surfaces.",
+                "action": "publish_inside_supportrd",
+            },
+            {
+                "provider": "connect_api",
+                "label": "Generic connected submit API",
+                "connected": generic_connected,
+                "status": "connected" if generic_connected else "missing_connect_api_url",
+                "scope": "Owner-approved handoff to your permitted posting/email/social integration.",
+                "action": "POST approved draft payload to SUPPORTRD_CONNECT_API_URL",
+            },
+            {
+                "provider": "email_or_form_api",
+                "label": "Email/form outreach connector",
+                "connected": generic_connected,
+                "status": "uses_connect_api" if generic_connected else "connect_api_required",
+                "scope": "Salon, hair store, college, career, blog, or publisher outreach that has an allowed form/email route.",
+                "action": "handoff_to_connect_api",
+            },
+            {
+                "provider": "social_platform_api",
+                "label": "Social platform connector",
+                "connected": generic_connected,
+                "status": "uses_connect_api_with_platform_permission" if generic_connected else "official_api_required",
+                "scope": "Only accounts/platforms you own or are authorized to use, through official APIs.",
+                "action": "handoff_to_connect_api",
+            },
+            {
+                "provider": "publisher_api",
+                "label": "Publisher/blog connector",
+                "connected": generic_connected,
+                "status": "uses_connect_api" if generic_connected else "connect_api_required",
+                "scope": "Blog, guest post, featured article, and directory submissions where submission is allowed.",
+                "action": "handoff_to_connect_api",
+            },
+        ],
+        "safety": "Connected API means owner-approved submit handoff. It is not a bypass for platforms that block automation or require account/app approval.",
+    }
+
+
+def submission_rows(limit=30):
+    conn = db()
+    try:
+        rs = conn.execute(
+            "SELECT * FROM outreach_connected_submissions ORDER BY id DESC LIMIT ?",
+            (int(limit),),
+        ).fetchall()
+    finally:
+        conn.close()
+    out = []
+    for row in rs:
+        out.append({
+            "id": row["id"],
+            "source_type": row["source_type"],
+            "source_id": row["source_id"],
+            "provider": row["provider"],
+            "target": json.loads(row["target_json"]),
+            "draft": json.loads(row["draft_json"]),
+            "status": row["status"],
+            "response": json.loads(row["response_json"]),
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        })
+    return out
+
+
+def insert_submission(source_type, source_id, provider, target, draft, status, response):
+    now = utc()
+    conn = db()
+    try:
+        cur = conn.execute(
+            "INSERT INTO outreach_connected_submissions "
+            "(source_type, source_id, provider, target_json, draft_json, status, response_json, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                source_type,
+                str(source_id or ""),
+                provider,
+                json.dumps(target or {}, sort_keys=True),
+                json.dumps(draft or {}, sort_keys=True),
+                status,
+                json.dumps(response or {}, sort_keys=True),
+                now,
+                now,
+            ),
+        )
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def find_movement_for_submit(payload):
+    payload = payload or {}
+    key = payload.get("key") or payload.get("source_key")
+    source_id = payload.get("id") or payload.get("source_id")
+    for item in rows():
+        if key and item.get("key") == key:
+            return "movement", item.get("id"), movement_for(item)
+        if source_id and str(item.get("id")) == str(source_id):
+            return "movement", item.get("id"), movement_for(item)
+    if payload.get("followup_id"):
+        for followup in followup_rows(120):
+            if str(followup.get("id")) == str(payload.get("followup_id")):
+                return "followup", followup.get("id"), {
+                    "id": followup.get("id"),
+                    "key": followup.get("source_key"),
+                    "category": followup.get("category") or "follow-up",
+                    "title": followup.get("title") or "SupportRD follow-up",
+                    "target": "connected owner-approved channel",
+                    "status": followup.get("status") or "approved_ready",
+                    "draft": followup.get("draft") or "",
+                    "movement": followup.get("strategy") or "",
+                    "next_action": "Submit through connected API when target channel is permitted.",
+                    "approval_boundary": followup.get("approval_boundary") or "Owner approved connected handoff only.",
+                    "website_target": website_target_for({
+                        "key": followup.get("source_key"),
+                        "category": followup.get("category") or "follow-up",
+                        "title": followup.get("title") or "SupportRD follow-up",
+                    }),
+                }
+    available = rows()
+    if available:
+        first = available[0]
+        return "movement", first.get("id"), movement_for(first)
+    default = normalize_item({
+        "category": "approved comment draft",
+        "title": "Manual connected submit",
+        "target": "owner-approved connected API",
+        "hook": "SupportRD natural-hair solutions.",
+    })
+    return "movement", None, movement_for(default)
+
+
+def submit_through_connected_api(payload):
+    source_type, source_id, movement = find_movement_for_submit(payload)
+    target = movement.get("website_target") or website_target_for(movement)
+    inferred_provider = connected_provider_for_target(target)
+    provider = (payload or {}).get("provider") or inferred_provider
+    draft = {
+        "title": movement.get("title") or "SupportRD growth draft",
+        "category": movement.get("category") or "outreach",
+        "message": movement.get("draft") or movement.get("movement") or "",
+        "movement": movement.get("movement") or "",
+        "next_action": movement.get("next_action") or "",
+        "tracking_url": target.get("tracking_url") or comment_funnel_url("connected-submit", target.get("lane_id") or "connect"),
+        "approved_by": "Main Developer Anthony",
+        "approved_at": utc(),
+        "approval_mode": "owner_clicked_connected_submit",
+    }
+    owned = provider == "owned_support_rd"
+    if owned:
+        response = {
+            "message": "Use the SupportRD owned publish endpoint for this card. The UI can publish it internally now.",
+            "publish_endpoint": "/api/outreach/owned-posts/publish",
+        }
+        submission_id = insert_submission(source_type, source_id, provider, target, draft, "ready_for_owned_publish", response)
+        log_event("connected_submit_ready_owned", {"id": submission_id, "source_id": source_id, "provider": provider})
+        return {
+            "ok": True,
+            "submission_id": submission_id,
+            "provider": provider,
+            "status": "ready_for_owned_publish",
+            "target": target,
+            "draft": draft,
+            "response": response,
+        }
+    if not CONNECT_API_URL:
+        response = {
+            "message": "Connected API URL is not configured yet.",
+            "needed_env": ["SUPPORTRD_CONNECT_API_URL", "SUPPORTRD_CONNECT_API_TOKEN"],
+            "provider_needed": provider,
+        }
+        submission_id = insert_submission(source_type, source_id, provider, target, draft, "connect_api_missing", response)
+        log_event("connected_submit_missing_api", {"id": submission_id, "source_id": source_id, "provider": provider})
+        return {
+            "ok": False,
+            "submission_id": submission_id,
+            "provider": provider,
+            "status": "connect_api_missing",
+            "target": target,
+            "draft": draft,
+            "response": response,
+        }
+
+    handoff = {
+        "source": "support_rd_outreach_engine",
+        "agent_ref": BOT_AGENT_REF,
+        "provider": provider,
+        "inferred_provider": inferred_provider,
+        "submit_mode": "owner_approved_connected_api",
+        "target": target,
+        "draft": draft,
+        "movement": movement,
+        "safety": "Owner clicked approve-through-connected-API. The receiving connector must obey platform rules and only use permitted accounts/APIs.",
+    }
+    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    if CONNECT_API_TOKEN:
+        headers["Authorization"] = f"Bearer {CONNECT_API_TOKEN}"
+    req = urllib.request.Request(
+        CONNECT_API_URL,
+        data=json.dumps(handoff).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=CONNECT_API_TIMEOUT_SECONDS) as res:
+            body = res.read(24000).decode("utf-8", "replace")
+            response = {
+                "http_status": int(getattr(res, "status", 200)),
+                "body": body[:2000],
+            }
+            status = "submitted_to_connected_api"
+            ok = 200 <= response["http_status"] < 300
+    except urllib.error.HTTPError as exc:
+        response = {
+            "http_status": int(exc.code),
+            "body": exc.read(2000).decode("utf-8", "replace"),
+        }
+        status = "connected_api_rejected"
+        ok = False
+    except Exception as exc:
+        response = {"error": str(exc)[:400]}
+        status = "connected_api_failed"
+        ok = False
+    submission_id = insert_submission(source_type, source_id, provider, target, draft, status, response)
+    log_event("connected_submit", {"id": submission_id, "provider": provider, "status": status, "ok": ok})
+    return {
+        "ok": ok,
+        "submission_id": submission_id,
+        "provider": provider,
+        "status": status,
+        "target": target,
+        "draft": draft,
+        "response": response,
+    }
+
+
 def settings_payload():
     owned_enabled = SUPPORTRD_POSTING_MODE in OWNED_POSTING_MODES
     allowed_work = list(BOT_SETTINGS.get("allowed_work", []))
@@ -931,6 +1235,7 @@ def settings_payload():
         "comment_funnel_goal": "Move comment/story readers into the hair-problem intake so bot traffic can be measured against real customer intent.",
         "allowed_work": allowed_work,
         "blocked_without_connected_channel": blocked_without_channel,
+        "connected_submit": connected_channel_status(),
         "focus_mode": FOCUS_MODE,
         "focus_priority": "comments, story posts, family letters, community-safe posts",
         "focus_terms": FOCUS_TERMS,
@@ -1320,6 +1625,7 @@ def movements():
         "focusLive": focus_live_payload(movement_rows[:80]),
         "followups": followups[:40],
         "settings": settings_payload(),
+        "connectedSubmissions": submission_rows(20),
         "safety": "Explicit approval path enabled. Drafts are queued for approval; external websites/social accounts require a permitted connected channel before automated action.",
     })
 
@@ -1327,6 +1633,24 @@ def movements():
 @outreach_engine_bp.route("/api/outreach/settings")
 def api_settings():
     return jsonify({"ok": True, "settings": settings_payload()})
+
+
+@outreach_engine_bp.route("/api/outreach/connect/status")
+def api_connect_status():
+    return jsonify({
+        "ok": True,
+        "connected": connected_channel_status(),
+        "recent_submissions": submission_rows(20),
+    })
+
+
+@outreach_engine_bp.route("/api/outreach/connect/submit", methods=["POST"])
+def api_connect_submit():
+    require_admin()
+    payload = request.get_json(silent=True) or {}
+    result = submit_through_connected_api(payload)
+    http_status = 200 if result.get("ok") or result.get("status") == "ready_for_owned_publish" else 409
+    return jsonify(result), http_status
 
 
 @outreach_engine_bp.route("/api/outreach/report")
