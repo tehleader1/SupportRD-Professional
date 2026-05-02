@@ -152,11 +152,27 @@ def get_stored_shopify_admin_token():
     except:
         return {}
 
-def get_shopify_admin_token():
+def get_shopify_admin_token(required_scope=""):
+    stored = get_stored_shopify_admin_token()
+    if required_scope and stored.get("access_token"):
+        stored_scopes = {scope.strip() for scope in (stored.get("scope") or "").split(",") if scope.strip()}
+        if required_scope in stored_scopes:
+            return stored.get("access_token", "")
     if SHOPIFY_ADMIN_TOKEN:
         return SHOPIFY_ADMIN_TOKEN
-    stored = get_stored_shopify_admin_token()
     return stored.get("access_token", "")
+
+def get_shopify_admin_token_source(required_scope=""):
+    stored = get_stored_shopify_admin_token()
+    if required_scope and stored.get("access_token"):
+        stored_scopes = {scope.strip() for scope in (stored.get("scope") or "").split(",") if scope.strip()}
+        if required_scope in stored_scopes:
+            return "oauth_database"
+    if SHOPIFY_ADMIN_TOKEN:
+        return "environment"
+    if stored.get("access_token"):
+        return "oauth_database"
+    return ""
 
 def get_shopify_admin_token_status():
     stored = get_stored_shopify_admin_token()
@@ -2735,7 +2751,7 @@ def fetch_shopify_sessions_report(force=False):
         return cached
 
     api_store = resolve_shopify_api_domain()
-    admin_token = get_shopify_admin_token()
+    admin_token = get_shopify_admin_token(required_scope="read_reports")
     if not api_store or not admin_token:
         payload = _shopify_sessions_report_empty(
             "Connect Shopify OAuth or SHOPIFY_ADMIN_TOKEN with the read_reports scope to read the private Shopify Analytics sessions report.",
@@ -6470,6 +6486,7 @@ def shopify_oauth_status():
         "ok": True,
         "connected": bool(token_status.get("configured")),
         "token_source": token_status.get("source"),
+        "report_token_source": get_shopify_admin_token_source(required_scope="read_reports"),
         "token_scope": token_status.get("scope"),
         "token_updated_at": token_status.get("updated_at"),
         "store": resolve_shopify_api_domain() or "supportdr-com.myshopify.com",
