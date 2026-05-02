@@ -9,8 +9,11 @@
   const OUTREACH_TICK_ENDPOINT = '/api/outreach/tick';
   const OUTREACH_EXPAND_ENDPOINT = '/api/outreach/expand';
   const OUTREACH_FOLLOWUPS_ENDPOINT = '/api/outreach/followups';
-  const TRAFFIC_SUMMARY_ENDPOINT = '/api/shopify/traffic/summary';
-  const TRAFFIC_PIXEL_ENDPOINT = '/api/shopify/traffic/pixel';
+  const LIVE_SUPPORT_RD_ORIGIN = 'https://supportrd.com';
+  const IS_LOCAL_PREVIEW = ['127.0.0.1', 'localhost', '::1'].includes(window.location.hostname || '');
+  const TRAFFIC_ORIGIN = IS_LOCAL_PREVIEW ? LIVE_SUPPORT_RD_ORIGIN : '';
+  const TRAFFIC_SUMMARY_ENDPOINT = `${TRAFFIC_ORIGIN}/api/shopify/traffic/summary`;
+  const TRAFFIC_PIXEL_ENDPOINT = `${TRAFFIC_ORIGIN}/api/shopify/traffic/pixel`;
   const TRAFFIC_PING_KEY = 'srTrafficPingEnabled';
   const TRAFFIC_CLIENT_KEY = 'srTrafficClientId';
   const TRAFFIC_LAST_ALERT_KEY = 'srTrafficLastAlertAt';

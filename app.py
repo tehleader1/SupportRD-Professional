@@ -3988,6 +3988,8 @@ def security_guard():
     path = (request.path or "").lower()
     if path.startswith("/health"):
         return None
+    if path.startswith("/api/shopify/traffic/"):
+        return None
     ip = client_ip()
     if is_local_dev_ip(ip):
         return None
