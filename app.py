@@ -20,6 +20,7 @@ import hmac
 import hashlib
 import base64
 from io import BytesIO
+from urllib.parse import parse_qs, urlparse
 from apscheduler.schedulers.background import BackgroundScheduler
 from openai import OpenAI
 
@@ -1416,6 +1417,9 @@ def client_ip():
     ip = xff or (request.remote_addr or "unknown")
     return ip[:64]
 
+def is_local_dev_ip(ip):
+    return (ip or "").strip().lower() in {"127.0.0.1", "::1", "localhost"}
+
 def log_security_event(ip, path, event_type, detail=""):
     try:
         conn = sqlite3.connect(SECURITY_DB_PATH)
@@ -1430,6 +1434,8 @@ def log_security_event(ip, path, event_type, detail=""):
         pass
 
 def ban_ip(ip, reason, notes=""):
+    if is_local_dev_ip(ip):
+        return False
     try:
         until_ts = int(time.time()) + (SEC_BAN_MINUTES * 60)
         conn = sqlite3.connect(SECURITY_DB_PATH)
@@ -1447,6 +1453,8 @@ def ban_ip(ip, reason, notes=""):
         return False
 
 def banned_reason(ip):
+    if is_local_dev_ip(ip):
+        return None
     try:
         conn = sqlite3.connect(SECURITY_DB_PATH)
         cur = conn.cursor()
@@ -1989,6 +1997,40 @@ def init_local_remote_db():
             ")"
         )
         cur.execute(
+            "CREATE TABLE IF NOT EXISTS shopify_traffic_events ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "visitor_key TEXT,"
+            "event_name TEXT,"
+            "path TEXT,"
+            "url TEXT,"
+            "title TEXT,"
+            "referrer TEXT,"
+            "shop_domain TEXT,"
+            "source TEXT,"
+            "campaign TEXT,"
+            "is_bot_return INTEGER DEFAULT 0,"
+            "payload_json TEXT,"
+            "ip_address TEXT,"
+            "created_at TEXT"
+            ")"
+        )
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS bot_return_visits ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "visitor_key TEXT,"
+            "source TEXT,"
+            "campaign TEXT,"
+            "event_name TEXT,"
+            "path TEXT,"
+            "referrer TEXT,"
+            "ip_address TEXT,"
+            "created_at TEXT"
+            ")"
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_shopify_traffic_created ON shopify_traffic_events(created_at)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_shopify_traffic_bot ON shopify_traffic_events(is_bot_return, created_at)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_bot_return_created ON bot_return_visits(created_at)")
+        cur.execute(
             "CREATE TABLE IF NOT EXISTS local_remote_inbox_offers ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT,"
             "owner_email TEXT,"
@@ -2193,6 +2235,342 @@ def summarize_local_remote_traffic(window_minutes=5):
             "top_paths": [],
             "mode": "steady_state",
         }
+
+
+SHOPIFY_TRAFFIC_EVENT_NAMES = [
+    "page_viewed",
+    "product_viewed",
+    "collection_viewed",
+    "search_submitted",
+    "cart_viewed",
+    "product_added_to_cart",
+    "checkout_started",
+    "checkout_completed",
+]
+
+BOT_RETURN_MARKERS = [
+    "sr_bot",
+    "supportrd_bot",
+    "support_rd_bot",
+    "outreach_bot",
+    "growth_bot",
+    "aria_growth",
+    "botwave",
+    "bot_return",
+    "utm_source=supportrd_bot",
+    "utm_medium=outreach",
+]
+
+
+def _clip_text(value, limit=240):
+    return str(value or "").strip()[:limit]
+
+
+def _query_params_from_url(url):
+    try:
+        return parse_qs(urlparse(url or "").query)
+    except:
+        return {}
+
+
+def _first_query_value(params, *keys):
+    for key in keys:
+        values = params.get(key) or params.get(key.lower()) or params.get(key.upper())
+        if values:
+            return _clip_text(values[0], 120)
+    return ""
+
+
+def _traffic_path_from_payload(payload):
+    payload = payload or {}
+    path = payload.get("path") or payload.get("pathname") or ""
+    url = payload.get("url") or payload.get("href") or ""
+    if path:
+        return _clip_text(path, 220) or "/"
+    try:
+        parsed = urlparse(url)
+        if parsed.path:
+            return _clip_text(parsed.path + (("?" + parsed.query) if parsed.query else ""), 220)
+    except:
+        pass
+    return "/"
+
+
+def _traffic_campaign(payload):
+    payload = payload or {}
+    url = payload.get("url") or payload.get("href") or ""
+    params = _query_params_from_url(url)
+    return (
+        _clip_text(payload.get("campaign") or payload.get("utm_campaign") or payload.get("sr_campaign"), 120)
+        or _first_query_value(params, "sr_campaign", "utm_campaign", "campaign")
+    )
+
+
+def _traffic_source(payload):
+    payload = payload or {}
+    url = payload.get("url") or payload.get("href") or ""
+    params = _query_params_from_url(url)
+    return (
+        _clip_text(payload.get("source") or payload.get("utm_source") or payload.get("sr_source"), 120)
+        or _first_query_value(params, "sr_source", "utm_source", "source")
+        or "shopify_customer_events"
+    )
+
+
+def _traffic_is_bot_return(payload, source, campaign, path):
+    payload = payload or {}
+    referrer = payload.get("referrer") or payload.get("document_referrer") or ""
+    url = payload.get("url") or payload.get("href") or ""
+    combined = " ".join([
+        str(source or ""),
+        str(campaign or ""),
+        str(path or ""),
+        str(referrer or ""),
+        str(url or ""),
+        str(payload.get("sr_bot") or ""),
+        str(payload.get("sr_outreach") or ""),
+    ]).lower()
+    return any(marker in combined for marker in BOT_RETURN_MARKERS)
+
+
+def build_shopify_traffic_pixel_snippet():
+    events_literal = ", ".join([f"'{name}'" for name in SHOPIFY_TRAFFIC_EVENT_NAMES])
+    return f"""// SupportRD live traffic reader for Shopify Customer Events > Custom pixel
+const SUPPORT_RD_TRAFFIC_ENDPOINT = 'https://supportrd.com/api/shopify/traffic/pixel';
+const SUPPORT_RD_EVENTS = [{events_literal}];
+
+function supportRDSendTraffic(event) {{
+  const doc = (event && event.context && event.context.document) || {{}};
+  const loc = doc.location || {{}};
+  const href = String(loc.href || '');
+  const search = String(loc.search || '');
+  const params = new URLSearchParams(search);
+  const payload = {{
+    source: 'shopify_customer_events',
+    event_name: event.name,
+    event_id: event.id,
+    client_id: event.clientId,
+    seq: event.seq,
+    timestamp: event.timestamp,
+    url: href,
+    path: `${{loc.pathname || '/'}}${{search}}`,
+    title: doc.title || '',
+    referrer: doc.referrer || '',
+    shop_domain: loc.hostname || '',
+    utm_source: params.get('utm_source') || '',
+    utm_campaign: params.get('utm_campaign') || '',
+    sr_bot: params.get('sr_bot') || params.get('sr_campaign') || ''
+  }};
+  fetch(SUPPORT_RD_TRAFFIC_ENDPOINT, {{
+    method: 'POST',
+    headers: {{ 'Content-Type': 'application/json' }},
+    body: JSON.stringify(payload),
+    keepalive: true
+  }}).catch(() => {{}});
+}}
+
+SUPPORT_RD_EVENTS.forEach((eventName) => {{
+  analytics.subscribe(eventName, supportRDSendTraffic);
+}});
+"""
+
+
+def record_shopify_traffic_event(payload, ip_address=""):
+    payload = payload or {}
+    now_iso = _local_remote_now()
+    event_name = _clip_text(
+        payload.get("event_name") or payload.get("event") or payload.get("name") or "shopify_event",
+        80,
+    )
+    visitor_key = _clip_text(
+        payload.get("visitor_key")
+        or payload.get("client_id")
+        or payload.get("clientId")
+        or payload.get("event_id")
+        or payload.get("id")
+        or ip_address
+        or "shopify_guest",
+        160,
+    )
+    path = _traffic_path_from_payload(payload)
+    url = _clip_text(payload.get("url") or payload.get("href") or "", 420)
+    title = _clip_text(payload.get("title") or "", 180)
+    referrer = _clip_text(payload.get("referrer") or payload.get("document_referrer") or "", 420)
+    shop_domain = _clip_text(payload.get("shop_domain") or payload.get("shop") or "", 120)
+    source = _traffic_source(payload)
+    campaign = _traffic_campaign(payload)
+    is_bot_return = _traffic_is_bot_return(payload, source, campaign, path)
+    safe_ip = _clip_text(ip_address, 80)
+    first_bot_return = False
+    try:
+        payload_json = json.dumps(payload, ensure_ascii=False)[:3000]
+    except:
+        payload_json = "{}"
+    try:
+        conn = sqlite3.connect(CREDIT_DB_PATH)
+        cur = conn.cursor()
+        previous_bot_visitors = int((cur.execute(
+            "SELECT COUNT(DISTINCT visitor_key) FROM bot_return_visits"
+        ).fetchone() or [0])[0] or 0)
+        cur.execute(
+            "INSERT INTO shopify_traffic_events "
+            "(visitor_key, event_name, path, url, title, referrer, shop_domain, source, campaign, is_bot_return, payload_json, ip_address, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                visitor_key,
+                event_name,
+                path,
+                url,
+                title,
+                referrer,
+                shop_domain,
+                source,
+                campaign,
+                1 if is_bot_return else 0,
+                payload_json,
+                safe_ip,
+                now_iso,
+            ),
+        )
+        if is_bot_return:
+            cur.execute(
+                "INSERT INTO bot_return_visits (visitor_key, source, campaign, event_name, path, referrer, ip_address, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (visitor_key, source, campaign, event_name, path, referrer, safe_ip, now_iso),
+            )
+            first_bot_return = previous_bot_visitors == 0
+        cutoff = (datetime.utcnow() - timedelta(days=45)).isoformat() + "Z"
+        cur.execute("DELETE FROM shopify_traffic_events WHERE created_at < ?", (cutoff,))
+        cur.execute("DELETE FROM bot_return_visits WHERE created_at < ?", (cutoff,))
+        conn.commit()
+        conn.close()
+    except:
+        pass
+    record_local_remote_traffic(f"{source}:{visitor_key}", path, ip_address)
+    return {
+        "event_name": event_name,
+        "visitor_key": visitor_key,
+        "path": path,
+        "source": source,
+        "campaign": campaign,
+        "is_bot_return": is_bot_return,
+        "first_bot_return": first_bot_return,
+        "created_at": now_iso,
+    }
+
+
+def _summarize_shopify_window(window_minutes=5):
+    window_minutes = max(1, int(window_minutes or 5))
+    cutoff = (datetime.utcnow() - timedelta(minutes=window_minutes)).isoformat() + "Z"
+    try:
+        conn = sqlite3.connect(CREDIT_DB_PATH)
+        cur = conn.cursor()
+        events = int((cur.execute(
+            "SELECT COUNT(*) FROM shopify_traffic_events WHERE created_at >= ?",
+            (cutoff,),
+        ).fetchone() or [0])[0] or 0)
+        visitors = int((cur.execute(
+            "SELECT COUNT(DISTINCT visitor_key) FROM shopify_traffic_events WHERE created_at >= ?",
+            (cutoff,),
+        ).fetchone() or [0])[0] or 0)
+        bot_events = int((cur.execute(
+            "SELECT COUNT(*) FROM shopify_traffic_events WHERE created_at >= ? AND is_bot_return = 1",
+            (cutoff,),
+        ).fetchone() or [0])[0] or 0)
+        bot_visitors = int((cur.execute(
+            "SELECT COUNT(DISTINCT visitor_key) FROM bot_return_visits WHERE created_at >= ?",
+            (cutoff,),
+        ).fetchone() or [0])[0] or 0)
+        top_paths = cur.execute(
+            "SELECT path, COUNT(*) AS hits FROM shopify_traffic_events WHERE created_at >= ? "
+            "GROUP BY path ORDER BY hits DESC LIMIT 5",
+            (cutoff,),
+        ).fetchall() or []
+        conn.close()
+        return {
+            "window_minutes": window_minutes,
+            "events": events,
+            "visitors": visitors,
+            "bot_events": bot_events,
+            "bot_visitors": bot_visitors,
+            "hot": visitors >= 3 or events >= 6 or bot_visitors >= 1,
+            "top_paths": [{"path": row[0] or "/", "hits": int(row[1] or 0)} for row in top_paths],
+        }
+    except:
+        return {
+            "window_minutes": window_minutes,
+            "events": 0,
+            "visitors": 0,
+            "bot_events": 0,
+            "bot_visitors": 0,
+            "hot": False,
+            "top_paths": [],
+        }
+
+
+def build_shopify_traffic_summary():
+    windows = [1, 5, 15, 60, 1440]
+    shopify_windows = [_summarize_shopify_window(minutes) for minutes in windows]
+    local_windows = [summarize_local_remote_traffic(minutes) for minutes in windows]
+    latest_bot_returns = []
+    latest_events = []
+    try:
+        conn = sqlite3.connect(CREDIT_DB_PATH)
+        cur = conn.cursor()
+        latest_bot_returns = [
+            {
+                "source": row[0] or "unknown",
+                "campaign": row[1] or "",
+                "event_name": row[2] or "",
+                "path": row[3] or "/",
+                "created_at": row[4] or "",
+            }
+            for row in (cur.execute(
+                "SELECT source, campaign, event_name, path, created_at FROM bot_return_visits ORDER BY id DESC LIMIT 8"
+            ).fetchall() or [])
+        ]
+        latest_events = [
+            {
+                "event_name": row[0] or "",
+                "source": row[1] or "",
+                "campaign": row[2] or "",
+                "path": row[3] or "/",
+                "is_bot_return": bool(row[4]),
+                "created_at": row[5] or "",
+            }
+            for row in (cur.execute(
+                "SELECT event_name, source, campaign, path, is_bot_return, created_at "
+                "FROM shopify_traffic_events ORDER BY id DESC LIMIT 12"
+            ).fetchall() or [])
+        ]
+        conn.close()
+    except:
+        latest_bot_returns = []
+        latest_events = []
+    five = next((item for item in shopify_windows if item["window_minutes"] == 5), shopify_windows[0])
+    local_five = next((item for item in local_windows if item["window_minutes"] == 5), local_windows[0])
+    wave_score = min(
+        100,
+        int(five.get("events", 0)) * 8
+        + int(five.get("visitors", 0)) * 15
+        + int(local_five.get("events", 0)) * 4
+        + int(five.get("bot_visitors", 0)) * 32,
+    )
+    return {
+        "ok": True,
+        "updated_at": _local_remote_now(),
+        "source": "shopify_customer_events_and_supportrd_local",
+        "wave_score": wave_score,
+        "wave_hot": wave_score >= 42 or bool(five.get("hot") or local_five.get("hot")),
+        "shopify": shopify_windows,
+        "local": local_windows,
+        "latest_bot_returns": latest_bot_returns,
+        "latest_events": latest_events,
+        "first_bot_return_seen": bool(latest_bot_returns),
+        "bot_return_total": int((shopify_windows[-1] or {}).get("bot_visitors", 0) or 0),
+        "pixel_snippet": build_shopify_traffic_pixel_snippet(),
+        "install_hint": "Shopify admin -> Settings -> Customer events -> Add custom pixel -> paste this snippet.",
+    }
 
 MARKET_READER_ENDPOINT = os.environ.get(
     "MARKET_READER_ENDPOINT",
@@ -3611,6 +3989,8 @@ def security_guard():
     if path.startswith("/health"):
         return None
     ip = client_ip()
+    if is_local_dev_ip(ip):
+        return None
 
     reason = banned_reason(ip)
     if reason:
@@ -8585,6 +8965,49 @@ def local_remote_traffic_ping():
     path = body.get("path") or request.referrer or "/"
     record_local_remote_traffic(visitor_key, path, request.remote_addr or "")
     return {"ok": True, "traffic": summarize_local_remote_traffic(window_minutes=5)}
+
+
+def _shopify_traffic_json(payload, status=200):
+    response = jsonify(payload)
+    response.status_code = status
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Requested-With"
+    response.headers["Access-Control-Max-Age"] = "86400"
+    return response
+
+
+@app.route("/api/shopify/traffic/pixel", methods=["POST", "OPTIONS"])
+def shopify_traffic_pixel():
+    if request.method == "OPTIONS":
+        return _shopify_traffic_json({"ok": True}, status=204)
+    body = request.get_json(silent=True) or request.form.to_dict() or request.args.to_dict() or {}
+    recorded = record_shopify_traffic_event(body, request.remote_addr or "")
+    summary = build_shopify_traffic_summary()
+    return _shopify_traffic_json({
+        "ok": True,
+        "recorded": {
+            "event_name": recorded.get("event_name"),
+            "path": recorded.get("path"),
+            "source": recorded.get("source"),
+            "campaign": recorded.get("campaign"),
+            "is_bot_return": recorded.get("is_bot_return"),
+            "first_bot_return": recorded.get("first_bot_return"),
+        },
+        "traffic": summary,
+    })
+
+
+@app.route("/api/shopify/traffic/summary")
+def shopify_traffic_summary():
+    return _shopify_traffic_json(build_shopify_traffic_summary())
+
+
+@app.route("/api/shopify/traffic/snippet")
+def shopify_traffic_snippet():
+    response = Response(build_shopify_traffic_pixel_snippet(), mimetype="text/plain")
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    return response
 
 
 @app.route("/api/local-remote/inbox/offers")
