@@ -20,14 +20,23 @@
   function phone(v){return String(v||'').replace(/[^0-9]/g,'');}
   function read(){try{return JSON.parse(localStorage.getItem(KEY)||'{}');}catch{return {};}}
   function write(data){localStorage.setItem(KEY,JSON.stringify(data));}
+  function cleanEmail(v){const email=String(v||'').trim().toLowerCase();return email.includes('@')?email:'';}
   function isOwner(email,ph){return OWNER_EMAILS.includes(String(email||'').toLowerCase())||OWNER_PHONES.includes(phone(ph));}
   function planKey(v){const raw=String(v||'free').toLowerCase();if(raw.includes('studio'))return 'studio';if(raw.includes('pro'))return 'pro';if(raw.includes('premium'))return 'premium';return PLAN_LINKS[raw]?raw:'free';}
   function paidPlan(plan){return /premium|pro|studio|signals/i.test(String(plan||''));}
   function tierFor(plan, owner){return owner?'Premium / Pro / Studio Jake':PLAN_LINKS[planKey(plan)].tier;}
-  function hasAccess(){const l=read();if(isOwner(l.email,l.phone))return true;return !!l.confirmed&&!!l.emailVerified&&paidPlan(l.tier||l.membershipPlan);}
-  function hasStudio(){const l=read();return isOwner(l.email,l.phone)||/studio|pro/i.test(String(l.tier||l.membershipPlan||''));}
+  function verifiedPaid(l){return !!(l?.shopifyVerified||l?.serverVerified||String(l?.verifiedSource||l?.source||'').includes('shopify_webhook'))&&paidPlan(l?.tier||l?.membershipPlan);}
+  function hasAccess(){const l=read();if(isOwner(l.email,l.phone))return true;return !!l.confirmed&&!!l.emailVerified&&verifiedPaid(l);}
+  function hasStudio(){const l=read();return isOwner(l.email,l.phone)||(verifiedPaid(l)&&/studio|pro/i.test(String(l.tier||l.membershipPlan||'')));}
   function displayName(l){const n=String(l.username||'').trim();if(n)return n;const email=String(l.email||'').trim();if(email&&email.includes('@'))return email.split('@')[0]||'Member';const ph=phone(l.phone||l.email);return ph?`Phone ${ph.slice(-4)}`:'SupportRD Member';}
   function statusText(text){const el=document.querySelector('#srLoginStatus');if(el){el.textContent=text;el.style.display='block';}}
+  function verificationLine(l){
+    if(l.shopifyVerified||l.serverVerified)return `Shopify payment verified${l.orderId?` · ${l.orderId}`:''}`;
+    if(l.checkoutPending)return `Waiting for Shopify verification${l.pendingPlan?` · ${PLAN_LINKS[planKey(l.pendingPlan)].label}`:''}`;
+    if(l.emailVerified)return 'Verified email account';
+    if(l.verificationSent)return 'Verification sent to email';
+    return 'Free account saved';
+  }
   function currentProfileImage(){
     try {
       const room = JSON.parse(localStorage.getItem('srFunctionalRoomsAdvancedV2') || '{}');
@@ -84,9 +93,10 @@
     const provider = STATE.provider ? ` for ${esc(STATE.provider)}` : '';
     return `<aside class="sr-product-pop ${STATE.productCollapsed?'is-collapsed':''}" id="srProductPop">
       <strong>Account Status</strong>
-      <p>Register${provider} free, or choose Premium, Pro, or Studio Jake. The status is saved to this account and the checkout link opens.</p>
+      <p>Register${provider} free, or choose Premium, Pro, or Studio Jake. Paid status unlocks after Shopify sends a verified paid-order webhook.</p>
       <div class="sr-product-actions">
         ${['premium','pro','studio'].map(key=>`<a class="checkout" href="${esc(PLAN_LINKS[key].href)}" target="_blank" rel="noopener" data-sr-checkout-plan="${key}"><span>${esc(PLAN_LINKS[key].label)}</span><b>${esc(PLAN_LINKS[key].short)}</b></a>`).join('')}
+        <button type="button" data-sync-subscription><span>Refresh Status</span><b>Shopify verified</b></button>
         <button class="free" type="button" data-sr-free-account><span>Continue Free</span><b>Saved account</b></button>
         <button type="button" data-sr-collapse-products><span>Collapse</span><b>Reopen anytime</b></button>
       </div>
@@ -97,6 +107,52 @@
     document.getElementById('srProductPop')?.remove();
     if(!show || STATE.productCollapsed)return;
     document.body.insertAdjacentHTML('beforeend',productPopupHtml());
+  }
+
+  let syncTimer = 0;
+  function scheduleServerSync(){
+    const l=read();
+    if(!l.confirmed||!cleanEmail(l.email)||isOwner(l.email,l.phone))return;
+    const age=Date.now()-(Number(l.subscriptionSyncedAt)||0);
+    if(age<15000)return;
+    clearTimeout(syncTimer);
+    syncTimer=setTimeout(()=>syncServerStatus(false),180);
+  }
+
+  async function syncServerStatus(force){
+    const l=read();
+    const email=cleanEmail(l.email);
+    if(!email){statusText('Log in with the same email used at Shopify checkout, then refresh status.');return;}
+    if(!force&&Date.now()-(Number(l.subscriptionSyncedAt)||0)<15000)return;
+    try {
+      const res=await fetch(`/api/subscription/status?email=${encodeURIComponent(email)}&ts=${Date.now()}`,{cache:'no-store'});
+      const data=await res.json();
+      if(!data.ok){if(force)statusText(data.error||'Subscription status not ready yet.');return;}
+      const sub=planKey(data.subscription);
+      const verified=!!data.verified&&sub!=='free';
+      const next=Object.assign({},l,{subscriptionSyncedAt:Date.now(), recentPurchases:data.recent_purchases||[]});
+      if(verified){
+        Object.assign(next,{
+          membershipPlan:sub,
+          tier:tierFor(sub,false),
+          confirmed:true,
+          emailVerified:true,
+          checkoutPending:false,
+          shopifyVerified:true,
+          serverVerified:true,
+          verifiedSource:data.source||'shopify_webhook_paid',
+          orderId:data.order_id||'',
+          paymentReturnStatus:`${PLAN_LINKS[sub].label} verified`
+        });
+      }
+      write(next);
+      applyAccountFeatures(next,isOwner(next.email,next.phone));
+      document.dispatchEvent(new CustomEvent('sr-login-updated',{detail:next}));
+      if(force)statusText(verified?`${PLAN_LINKS[sub].label} verified by Shopify webhook.`:'No paid Shopify webhook found for this email yet.');
+      if(verified||force)render();
+    } catch {
+      if(force)statusText('Subscription status endpoint is not reachable yet.');
+    }
   }
 
   function railHtml(){
@@ -123,18 +179,20 @@
   function accountHtml(){
     const l=read();
     const owner=isOwner(l.email,l.phone);
-    const flags=featureFlags(l.membershipPlan||l.tier,owner);
     const access=hasAccess();
+    const flags=featureFlags(access?l.membershipPlan||l.tier:'free',owner);
     return `<div class="sr-login-shell">
       <div class="sr-login-head">${markHtml()}<div class="sr-login-title"><strong>${esc(displayName(l))}</strong><span>${esc(access?tierFor(l.membershipPlan,owner):'Free account')}</span></div></div>
-      <p class="sr-account-note">${esc(l.email||l.phone||'Local account')}<br>${l.emailVerified?'Verified email account':l.verificationSent?'Verification sent to email':'Free account saved'}</p>
+      <p class="sr-account-note">${esc(l.email||l.phone||'Local account')}<br>${esc(verificationLine(l))}</p>
       <div class="sr-account-grid">
+        <div class="sr-account-stat"><span>Account Status</span><b>${access?'Verified':'Free'}</b></div>
         <div class="sr-account-stat"><span>Diary Live</span><b>${flags.diaryPaidLive?'Active':'Locked'}</b></div>
         <div class="sr-account-stat"><span>Profile</span><b>${flags.profilePremiumReadings?'Premium':'Free'}</b></div>
         <div class="sr-account-stat"><span>Studio FX</span><b>${flags.studioPremiumFx?'Premium':'Free'}</b></div>
         <div class="sr-account-stat"><span>Studio Jake</span><b>${flags.studioJake?'Active':'Optional'}</b></div>
       </div>
       <div class="sr-login-row" style="grid-template-columns:1fr 31px"><button class="sr-product-toggle" type="button" data-sr-products>Account Status</button><button class="sr-cart-btn" type="button" data-sr-cart aria-label="Open SupportRD catalog">${cartIcon()}</button></div>
+      <button class="ghost" type="button" data-sync-subscription>Refresh Shopify Status</button>
       <button type="button" data-login-edit>Login</button>
       <button class="ghost" type="button" data-email-confirm>Verify Email</button>
       <button class="ghost" type="button" data-forgot-password>Forgot Password</button>
@@ -150,13 +208,14 @@
     box.className=`sr-login-square ${l.confirmed?'is-account':STATE.mode==='rail'?'is-rail':'is-open'}`;
     box.innerHTML=l.confirmed?accountHtml():railHtml();
     renderProductPopup(STATE.mode==='register'||!!STATE.provider);
+    scheduleServerSync();
   }
 
   function applyAccountFeatures(login, owner){
-    const flags=featureFlags(login.membershipPlan, owner);
+    const flags=featureFlags((owner||verifiedPaid(login))?login.membershipPlan:'free', owner);
     const cycle=new Date().toISOString().slice(0,10);
     try {
-      root.patchAccountBackbone?.('membership',{ plan:login.membershipPlan, tier:login.tier, verifiedEmail:!!login.emailVerified, checkoutPending:!!login.checkoutPending, paymentLink:login.paymentLink, paymentLinks:PLAN_LINKS });
+      root.patchAccountBackbone?.('membership',{ plan:verifiedPaid(login)||owner?login.membershipPlan:'free', pendingPlan:login.pendingPlan||'', tier:verifiedPaid(login)||owner?login.tier:'Free', verifiedEmail:!!login.emailVerified, shopifyVerified:!!(login.shopifyVerified||login.serverVerified), checkoutPending:!!login.checkoutPending, paymentLink:login.paymentLink, orderId:login.orderId||'', paymentLinks:PLAN_LINKS });
       root.patchAccountBackbone?.('features',flags);
       root.patchAccountBackbone?.('diary',{ paidLive:flags.diaryPaidLive, ariaCelebrations:flags.ariaCelebrations });
       root.patchAccountBackbone?.('profile',{ displayName:login.username, premiumHistoricalReadings:flags.profilePremiumReadings, summaryReadings:flags.profileSummaryReadings });
@@ -198,6 +257,7 @@
     applyAccountFeatures(login,owner);
     document.dispatchEvent(new CustomEvent('sr-login-updated',{detail:login}));
     render();
+    setTimeout(()=>syncServerStatus(false),300);
   }
 
   function saveLogin(){
@@ -216,13 +276,31 @@
     const login=baseLogin('free',{emailVerified:false,verificationSent:true,provider:'email'});
     finish(login);
     await accountEmail('confirm',email);
-    statusText(`Verification sent to ${email}. Continue free, or open Products for Premium, Pro, or Studio Jake.`);
+    statusText(`Verification sent to ${email}. Continue free, or open Account Status for Premium, Pro, or Studio Jake.`);
   }
 
   function chooseProduct(plan){
     const key=planKey(plan);
-    const login=baseLogin(key,{checkoutPending:false,checkoutLinked:true,emailVerified:true,paymentLink:PLAN_LINKS[key].href,paymentReturnStatus:PLAN_LINKS[key].tier});
+    const existing=read();
+    const email=cleanEmail(document.querySelector('[data-login-email]')?.value||existing.email||'');
+    const login=Object.assign(baseLogin('free',{
+      emailVerified:!!existing.emailVerified,
+      provider:existing.provider||STATE.provider||'email',
+      email:email||existing.email||'',
+    }),{
+      membershipPlan:'free',
+      tier:'Free',
+      pendingPlan:key,
+      checkoutPending:true,
+      checkoutLinked:true,
+      shopifyVerified:false,
+      serverVerified:false,
+      paymentLink:PLAN_LINKS[key].href,
+      paymentReturnStatus:`Pending ${PLAN_LINKS[key].label}`,
+      statusMessage: email ? 'Waiting for verified Shopify paid-order webhook.' : 'Use the same email at checkout, then log in here and refresh status.'
+    });
     finish(login);
+    statusText(login.statusMessage);
   }
 
   function providerAuth(provider){
@@ -263,6 +341,7 @@
     if(provider){providerAuth(provider.dataset.provider);return;}
     if(e.target.closest('[data-sr-products]')){STATE.productCollapsed=false;localStorage.removeItem('srProductCollapsed');renderProductPopup(true);return;}
     if(e.target.closest('[data-sr-cart]')){root.renderFunctionalPanel?.('catalog') || root.navigateTo?.('catalog');document.getElementById('srProductPop')?.remove();return;}
+    if(e.target.closest('[data-sync-subscription]')){syncServerStatus(true);return;}
     if(e.target.closest('[data-sr-collapse-products]')){STATE.productCollapsed=true;localStorage.setItem('srProductCollapsed','true');document.getElementById('srProductPop')?.remove();return;}
     if(e.target.closest('[data-sr-free-account]')){finish(baseLogin('free',{emailVerified:false,verificationSent:STATE.mode==='register',provider:(STATE.provider||'email').toLowerCase()}));return;}
     const checkout=e.target.closest('[data-sr-checkout-plan]');
@@ -276,6 +355,7 @@
   root.hasStudioJakeEntitlement=hasStudio;
   root.getLoginAccount=read;
   root.activateLoginFeatures=applyAccountFeatures;
+  root.syncShopifySubscriptionStatus=syncServerStatus;
   root.initLoginSquare=render;
   render();
 })();

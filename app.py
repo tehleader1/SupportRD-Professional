@@ -191,6 +191,7 @@ COMMUNITY_ALERT_EXTRA_EMAILS = [
 DEFAULT_SHOPIFY_PLAN_SKU_MAP = {
     "premium": {"hairadvisorpremium", "premium35", "srdpremium35"},
     "pro": {"professionalhairadvisor", "pro50", "srdpro50"},
+    "studio100": {"jakeinthestudio", "studiojake100", "jakestudio100", "srdstudio100"},
     "bingo100": {"bingofantasy100", "bingo100", "srdbingo100"},
     "family200": {"familyfantasy200", "family200", "srdfamily200"},
     "yoda": {"yodapass", "yoda20", "srdyoda20"},
@@ -203,9 +204,10 @@ DEFAULT_SHOPIFY_PLAN_TITLE_PATTERNS = [
     ("fantasy300", ["basic fantasy 21+", "basic fantasy"]),
     ("family200", ["family fantasy pack", "family fantasy"]),
     ("bingo100", ["bingo fantasy"]),
+    ("studio100", ["jake in the studio", "studio jake", "studio tier", "jake premium studio"]),
     ("yoda", ["yoda pass"]),
-    ("pro", ["unlimited aria professional", "professional hair advisor"]),
-    ("premium", ["aria puzzle tier", "hair advisor premium"]),
+    ("pro", ["aria professional making money", "professional making money", "professional account", "professional hair advisor"]),
+    ("premium", ["aria ai voice inner circle", "inner circle tier", "premium account", "aria puzzle tier", "hair advisor premium"]),
 ]
 
 PUBLIC_SHOPIFY_CHECKOUT_META = {
@@ -265,6 +267,19 @@ def get_public_shopify_checkout_map():
         }
     return payload
 
+def _shopify_line_item_search_text(item):
+    if not isinstance(item, dict):
+        return ""
+    fields = [
+        item.get("title"),
+        item.get("name"),
+        item.get("variant_title"),
+        item.get("sku"),
+        item.get("vendor"),
+        item.get("product_title"),
+    ]
+    return " ".join(str(value or "") for value in fields).strip().lower()
+
 def infer_shopify_plan_from_line_items(items):
     rows = items if isinstance(items, list) else []
     for item in rows:
@@ -279,7 +294,7 @@ def infer_shopify_plan_from_line_items(items):
             if sku_norm in sku_set:
                 return plan, f"sku:{sku_norm}"
     for item in rows:
-        title = (item.get("title") or "").strip().lower()
+        title = _shopify_line_item_search_text(item)
         for plan, patterns in DEFAULT_SHOPIFY_PLAN_TITLE_PATTERNS:
             if any(pat in title for pat in patterns):
                 return plan, f"title:{patterns[0]}"
@@ -1349,6 +1364,20 @@ def init_subscription_db():
             "created_at TEXT"
             ")"
         )
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS shopify_webhook_events ("
+            "webhook_id TEXT PRIMARY KEY,"
+            "topic TEXT,"
+            "shop_domain TEXT,"
+            "order_id TEXT,"
+            "email TEXT,"
+            "plan TEXT,"
+            "match_reason TEXT,"
+            "created_at TEXT"
+            ")"
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_shopify_webhook_events_email ON shopify_webhook_events(email)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_shopify_webhook_events_order ON shopify_webhook_events(order_id)")
         conn.commit()
         conn.close()
     except:
@@ -1579,6 +1608,96 @@ def get_recent_purchases_for_email(email, limit=5):
         ]
     except:
         return []
+
+def verify_shopify_webhook_signature(raw_body):
+    if not SHOPIFY_WEBHOOK_SECRET:
+        return False, "webhook_secret_not_configured"
+    header_hmac = request.headers.get("X-Shopify-Hmac-Sha256", "")
+    if not header_hmac:
+        return False, "missing_hmac"
+    digest = hmac.new(
+        SHOPIFY_WEBHOOK_SECRET.encode("utf-8"),
+        raw_body or b"",
+        hashlib.sha256,
+    ).digest()
+    expected = base64.b64encode(digest).decode("utf-8")
+    if not hmac.compare_digest(expected, header_hmac):
+        return False, "invalid_signature"
+    return True, "verified"
+
+def extract_shopify_order_email(payload):
+    payload = payload or {}
+    customer = payload.get("customer") or {}
+    candidates = [
+        payload.get("email"),
+        payload.get("contact_email"),
+        payload.get("customer_email"),
+        customer.get("email") if isinstance(customer, dict) else "",
+    ]
+    for candidate in candidates:
+        email = (candidate or "").strip().lower()
+        if email and "@" in email:
+            return email[:160]
+    return ""
+
+def shopify_order_number(payload):
+    payload = payload or {}
+    for key in ("id", "admin_graphql_api_id", "order_number", "name"):
+        value = str(payload.get(key) or "").strip()
+        if value:
+            return value[:80]
+    return ""
+
+def record_shopify_webhook_event(webhook_id, topic, shop_domain, order_id, email, plan, match_reason):
+    if not webhook_id:
+        webhook_id = f"{topic or 'shopify'}:{shop_domain or 'unknown'}:{order_id or uuid.uuid4().hex}"
+    try:
+        conn = sqlite3.connect(CREDIT_DB_PATH)
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO shopify_webhook_events (webhook_id, topic, shop_domain, order_id, email, plan, match_reason, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                webhook_id[:120],
+                (topic or "")[:80],
+                (shop_domain or "")[:160],
+                (order_id or "")[:80],
+                (email or "")[:160],
+                (plan or "")[:40],
+                (match_reason or "")[:140],
+                datetime.utcnow().isoformat() + "Z",
+            ),
+        )
+        conn.commit()
+        conn.close()
+        return True
+    except sqlite3.IntegrityError:
+        return False
+    except:
+        return True
+
+def latest_shopify_webhook_event():
+    try:
+        conn = sqlite3.connect(CREDIT_DB_PATH)
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT topic, shop_domain, order_id, email, plan, match_reason, created_at FROM shopify_webhook_events ORDER BY created_at DESC LIMIT 1"
+        )
+        row = cur.fetchone()
+        conn.close()
+        if not row:
+            return {}
+        return {
+            "topic": row[0] or "",
+            "shop_domain": row[1] or "",
+            "order_id": row[2] or "",
+            "email": row[3] or "",
+            "plan": row[4] or "",
+            "match_reason": row[5] or "",
+            "created_at": row[6] or "",
+        }
+    except:
+        return {}
 
 def init_app_settings_db():
     try:
@@ -4946,10 +5065,12 @@ def subscription_status():
     if not email:
         return {"ok": False, "error": "email_required"}, 400
     details = get_subscription_details_for_email(email)
+    source = details.get("source") or ""
     return {
         "ok": True,
         "subscription": details.get("plan") or "free",
-        "source": details.get("source") or "",
+        "source": source,
+        "verified": source.startswith("shopify_webhook"),
         "order_id": details.get("order_id") or "",
         "updated_at": details.get("updated_at") or "",
         "recent_purchases": get_recent_purchases_for_email(email, limit=5),
@@ -5349,23 +5470,21 @@ def studio_session_history():
     return {"ok": True, "session_id": session_id, "history": history}
 
 @app.route("/webhooks/shopify/orders-paid", methods=["POST"])
+@app.route("/webhooks/shopify/orders/paid", methods=["POST"])
+@app.route("/api/webhooks/shopify/orders-paid", methods=["POST"])
 def shopify_orders_paid_webhook():
-    if not SHOPIFY_WEBHOOK_SECRET:
-        return {"ok": False, "error": "webhook_secret_not_configured"}, 503
-    h = request.headers.get("X-Shopify-Hmac-Sha256", "")
     body = request.get_data() or b""
-    digest = hmac.new(
-        SHOPIFY_WEBHOOK_SECRET.encode("utf-8"),
-        body,
-        hashlib.sha256
-    ).digest()
-    expected = base64.b64encode(digest).decode("utf-8")
-    if not h or not hmac.compare_digest(expected, h):
-        return {"ok": False, "error": "invalid_signature"}, 401
+    signature_ok, signature_reason = verify_shopify_webhook_signature(body)
+    if not signature_ok:
+        status = 503 if signature_reason == "webhook_secret_not_configured" else 401
+        return {"ok": False, "error": signature_reason}, status
     try:
-        payload = request.json or {}
-        email = (payload.get("email") or ((payload.get("customer") or {}).get("email")) or "").strip().lower()
-        order_id = str(payload.get("id") or "")
+        payload = json.loads(body.decode("utf-8") or "{}")
+        topic = request.headers.get("X-Shopify-Topic", "orders/paid")
+        shop_domain = request.headers.get("X-Shopify-Shop-Domain", "")
+        webhook_id = request.headers.get("X-Shopify-Webhook-Id", "") or request.headers.get("X-Shopify-Event-Id", "")
+        email = extract_shopify_order_email(payload)
+        order_id = shopify_order_number(payload)
         items = payload.get("line_items", []) or []
         physical_items = filter_physical_order_items(items)
         forwarded = False
@@ -5375,13 +5494,26 @@ def shopify_orders_paid_webhook():
             except Exception:
                 forwarded = False
         if not email:
+            record_shopify_webhook_event(webhook_id, topic, shop_domain, order_id, "", "", "missing_email")
             return {"ok": True, "ignored": "missing_email", "forwarded_to_owner": forwarded}
         plan, match_reason = infer_shopify_plan_from_line_items(items)
+        recorded = record_shopify_webhook_event(webhook_id, topic, shop_domain, order_id, email, plan or "", match_reason)
+        if not recorded:
+            return {"ok": True, "duplicate": True, "email": email, "order_id": order_id}
         if not plan:
             return {"ok": True, "ignored": "not_subscription_order", "forwarded_to_owner": forwarded}
         ok = set_subscription_for_email(email, plan, source="shopify_webhook_paid", order_id=order_id)
         remember_purchase_for_email(email, plan, plan, source="shopify_webhook_paid", order_id=order_id)
-        return {"ok": bool(ok), "email": email, "plan": plan, "match_reason": match_reason, "forwarded_to_owner": forwarded}
+        return {
+            "ok": bool(ok),
+            "verified": True,
+            "email": email,
+            "plan": plan,
+            "match_reason": match_reason,
+            "order_id": order_id,
+            "topic": topic,
+            "forwarded_to_owner": forwarded,
+        }
     except Exception as e:
         return {"ok": False, "error": str(e)[:200]}, 500
 
@@ -5448,6 +5580,7 @@ def shopify_connector_health():
         "product_count": product_count,
         "missing": missing,
         "products_error": products_error,
+        "last_webhook": latest_shopify_webhook_event(),
     }
 
 @app.route("/api/shopify/public-config")
