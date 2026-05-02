@@ -2998,6 +2998,136 @@ def _decode_shopify_report_query(report_link="", report_text=""):
     return ""
 
 
+def _parse_shopify_summary_metrics(report_text):
+    text = str(report_text or "").strip()
+    if not text:
+        return {}
+    compact = re.sub(r"\s+", " ", text)
+    metrics = {}
+
+    percent_values = [
+        _safe_float(value)
+        for value in re.findall(r"(-?\d[\d,]*(?:\.\d+)?)\s*%", compact)
+    ]
+    if percent_values:
+        metrics["conversion_rate_percent"] = percent_values[0]
+    if len(percent_values) > 1:
+        metrics["bounce_rate_percent"] = percent_values[1]
+
+    duration_match = re.search(
+        r"(\d[\d,]*(?:\.\d+)?)\s*(?:seconds?|secs?|sec)\b",
+        compact,
+        re.IGNORECASE,
+    )
+    if duration_match:
+        metrics["average_session_duration_seconds"] = round(_safe_float(duration_match.group(1)), 2)
+
+    session_match = re.search(
+        r"\bsessions?\b\s*[:=\-]?\s*(\d[\d,]*)\b",
+        compact,
+        re.IGNORECASE,
+    )
+    visitor_match = re.search(
+        r"\bonline store visitors?\b\s*[:=\-]?\s*(\d[\d,]*)\b",
+        compact,
+        re.IGNORECASE,
+    )
+    if session_match:
+        metrics["total_sessions"] = int(round(_safe_float(session_match.group(1))))
+    if visitor_match:
+        metrics["total_online_store_visitors"] = int(round(_safe_float(visitor_match.group(1))))
+
+    if (
+        ("online store visitor" in compact.lower() or "conversion rate" in compact.lower())
+        and ("total_sessions" not in metrics or "total_online_store_visitors" not in metrics)
+    ):
+        plain_numbers = []
+        for value, unit in re.findall(
+            r"(-?\d[\d,]*(?:\.\d+)?)\s*(%|seconds?|secs?|sec)?",
+            compact,
+            re.IGNORECASE,
+        ):
+            if unit:
+                continue
+            if "." in value:
+                continue
+            number = int(round(_safe_float(value)))
+            if 0 < number < 10000000:
+                plain_numbers.append(number)
+        if len(plain_numbers) >= 2:
+            metrics.setdefault("total_sessions", plain_numbers[-2])
+            metrics.setdefault("total_online_store_visitors", plain_numbers[-1])
+
+    return metrics
+
+
+def _infer_shopify_report_window_days(query="", report_text="", series=None):
+    series = series or []
+    if len(series) > 1:
+        return max(1, len(series))
+    combined = f"{query or ''} {report_text or ''}"
+    start_day = re.search(r"startOfDay\(-(\d+)d\)", combined, re.IGNORECASE)
+    if start_day:
+        return max(1, int(_safe_float(start_day.group(1))))
+    date_range = re.search(
+        r"(\d{4}-\d{2}-\d{2})\s*(?:-|to|through)\s*(\d{4}-\d{2}-\d{2})",
+        combined,
+        re.IGNORECASE,
+    )
+    if date_range:
+        try:
+            start = datetime.fromisoformat(date_range.group(1))
+            end = datetime.fromisoformat(date_range.group(2))
+            return max(1, (end - start).days + 1)
+        except:
+            pass
+    return 7
+
+
+def build_shopify_arrival_estimate(total_visitors=0, total_sessions=0, metrics=None, query="", report_text="", series=None):
+    metrics = metrics or {}
+    series = series or []
+    visitors = int(total_visitors or metrics.get("total_online_store_visitors") or 0)
+    sessions = int(total_sessions or metrics.get("total_sessions") or 0)
+    window_days = _infer_shopify_report_window_days(query=query, report_text=report_text, series=series)
+    total_minutes = max(1, window_days * 24 * 60)
+    total_hours = total_minutes / 60
+    conversion_rate = _safe_float(metrics.get("conversion_rate_percent"))
+    bounce_rate = _safe_float(metrics.get("bounce_rate_percent"))
+    average_duration = _safe_float(metrics.get("average_session_duration_seconds"))
+
+    expected_conversions = sessions * (conversion_rate / 100) if conversion_rate else 0
+    engaged_sessions = sessions * max(0, 1 - (bounce_rate / 100)) if bounce_rate else 0
+    active_session_seconds = sessions * average_duration if average_duration else 0
+    average_active_sessions = active_session_seconds / (total_minutes * 60) if active_session_seconds else 0
+
+    visitor_interval = total_minutes / visitors if visitors else 0
+    session_interval = total_minutes / sessions if sessions else 0
+    engaged_interval = total_minutes / engaged_sessions if engaged_sessions else 0
+    conversion_interval = total_hours / expected_conversions if expected_conversions else 0
+
+    return {
+        "ok": bool(visitors or sessions),
+        "source": "shopify_arrival_estimate",
+        "window_days": window_days,
+        "visitors": visitors,
+        "sessions": sessions,
+        "visitors_per_day": round(visitors / window_days, 2) if window_days else 0,
+        "sessions_per_day": round(sessions / window_days, 2) if window_days else 0,
+        "visitor_interval_minutes": round(visitor_interval, 2) if visitor_interval else 0,
+        "session_interval_minutes": round(session_interval, 2) if session_interval else 0,
+        "conversion_rate_percent": round(conversion_rate, 4) if conversion_rate else 0,
+        "expected_conversions": round(expected_conversions, 2) if expected_conversions else 0,
+        "conversion_interval_hours": round(conversion_interval, 2) if conversion_interval else 0,
+        "bounce_rate_percent": round(bounce_rate, 2) if bounce_rate else 0,
+        "engaged_sessions": int(round(engaged_sessions)) if engaged_sessions else 0,
+        "engaged_interval_minutes": round(engaged_interval, 2) if engaged_interval else 0,
+        "average_session_duration_seconds": round(average_duration, 2) if average_duration else 0,
+        "average_active_sessions": round(average_active_sessions, 3) if average_active_sessions else 0,
+        "summary": "Estimate from Shopify sessions/visitor math. It predicts average timing, not an exact clock.",
+    }
+
+
 def _parse_manual_shopify_sessions(report_text):
     text = str(report_text or "").strip()
     if not text:
@@ -3082,11 +3212,12 @@ def latest_manual_shopify_sessions_report():
         conn = sqlite3.connect(CREDIT_DB_PATH)
         cur = conn.cursor()
         row = cur.execute(
-            "SELECT report_link, report_query, parsed_json, total_online_store_visitors, total_sessions, created_at "
+            "SELECT report_link, report_query, report_text, parsed_json, total_online_store_visitors, total_sessions, created_at "
             "FROM shopify_manual_session_reports ORDER BY id DESC LIMIT 1"
         ).fetchone()
         conn.close()
         if not row:
+            estimate = build_shopify_arrival_estimate()
             return {
                 "ok": False,
                 "source": "shopify_manual_sessions",
@@ -3094,12 +3225,26 @@ def latest_manual_shopify_sessions_report():
                 "series": [],
                 "total_online_store_visitors": 0,
                 "total_sessions": 0,
+                "metrics": {},
+                "arrival_estimate": estimate,
                 "updated_at": "",
             }
         try:
-            series = json.loads(row[2] or "[]")
+            series = json.loads(row[3] or "[]")
         except:
             series = []
+        report_text = row[2] or ""
+        metrics = _parse_shopify_summary_metrics(report_text)
+        total_visitors = int(row[4] or metrics.get("total_online_store_visitors") or 0)
+        total_sessions = int(row[5] or metrics.get("total_sessions") or 0)
+        estimate = build_shopify_arrival_estimate(
+            total_visitors=total_visitors,
+            total_sessions=total_sessions,
+            metrics=metrics,
+            query=row[1] or "",
+            report_text=report_text,
+            series=series,
+        )
         return {
             "ok": True,
             "source": "shopify_manual_sessions",
@@ -3107,11 +3252,14 @@ def latest_manual_shopify_sessions_report():
             "report_link": row[0] or "",
             "query": row[1] or "",
             "series": series,
-            "total_online_store_visitors": int(row[3] or 0),
-            "total_sessions": int(row[4] or 0),
-            "updated_at": row[5] or "",
+            "total_online_store_visitors": total_visitors,
+            "total_sessions": total_sessions,
+            "metrics": metrics,
+            "arrival_estimate": estimate,
+            "updated_at": row[6] or "",
         }
     except:
+        estimate = build_shopify_arrival_estimate()
         return {
             "ok": False,
             "source": "shopify_manual_sessions",
@@ -3119,6 +3267,8 @@ def latest_manual_shopify_sessions_report():
             "series": [],
             "total_online_store_visitors": 0,
             "total_sessions": 0,
+            "metrics": {},
+            "arrival_estimate": estimate,
             "updated_at": "",
         }
 
@@ -3128,8 +3278,15 @@ def save_manual_shopify_sessions_report(report_link="", report_text=""):
     text = _clip_text(report_text, 12000)
     query = _decode_shopify_report_query(link, text) or SHOPIFY_SESSIONS_REPORT_QUERY
     series = _parse_manual_shopify_sessions(text)
-    total_visitors = int(sum(item.get("online_store_visitors", 0) for item in series))
-    total_sessions = int(sum(item.get("sessions", 0) for item in series))
+    metrics = _parse_shopify_summary_metrics(text)
+    if not series and (metrics.get("total_sessions") or metrics.get("total_online_store_visitors")):
+        series = [{
+            "label": "manual summary",
+            "online_store_visitors": int(metrics.get("total_online_store_visitors") or 0),
+            "sessions": int(metrics.get("total_sessions") or 0),
+        }]
+    total_visitors = int(metrics.get("total_online_store_visitors") or sum(item.get("online_store_visitors", 0) for item in series))
+    total_sessions = int(metrics.get("total_sessions") or sum(item.get("sessions", 0) for item in series))
     created_at = _local_remote_now()
     try:
         conn = sqlite3.connect(CREDIT_DB_PATH)
@@ -3162,6 +3319,47 @@ def save_manual_shopify_sessions_report(report_link="", report_text=""):
             "updated_at": created_at,
         }
     return latest_manual_shopify_sessions_report()
+
+
+def build_traffic_jump_read(shopify_windows, local_windows):
+    def _window(rows, minutes):
+        return next((item for item in rows if int(item.get("window_minutes") or 0) == minutes), {})
+
+    five = _window(shopify_windows, 5) or _window(local_windows, 5) or {}
+    fifteen = _window(shopify_windows, 15) or _window(local_windows, 15) or {}
+    sixty = _window(shopify_windows, 60) or _window(local_windows, 60) or {}
+    five_events = int(five.get("events") or 0)
+    five_visitors = int(five.get("visitors") or 0)
+    baseline_15_events = max(0.1, (int(fifteen.get("events") or 0) - five_events) / 2)
+    baseline_15_visitors = max(0.1, (int(fifteen.get("visitors") or 0) - five_visitors) / 2)
+    baseline_60_events = max(0.1, (int(sixty.get("events") or 0) - five_events) / 11)
+    baseline_60_visitors = max(0.1, (int(sixty.get("visitors") or 0) - five_visitors) / 11)
+    event_multiplier = max(five_events / baseline_15_events, five_events / baseline_60_events) if five_events else 0
+    visitor_multiplier = max(five_visitors / baseline_15_visitors, five_visitors / baseline_60_visitors) if five_visitors else 0
+    jump_score = min(
+        100,
+        int(five_events * 12 + five_visitors * 20 + max(event_multiplier, visitor_multiplier) * 12),
+    )
+    significant = (
+        (five_visitors >= 2 and visitor_multiplier >= 1.8)
+        or (five_events >= 4 and event_multiplier >= 1.8)
+        or jump_score >= 48
+    )
+    return {
+        "ok": True,
+        "source": "rolling_5m_vs_15m_60m",
+        "significant": bool(significant),
+        "score": jump_score,
+        "five_minute_events": five_events,
+        "five_minute_visitors": five_visitors,
+        "event_multiplier": round(event_multiplier, 2),
+        "visitor_multiplier": round(visitor_multiplier, 2),
+        "baseline_15_events_per_5m": round(baseline_15_events, 2),
+        "baseline_15_visitors_per_5m": round(baseline_15_visitors, 2),
+        "baseline_60_events_per_5m": round(baseline_60_events, 2),
+        "baseline_60_visitors_per_5m": round(baseline_60_visitors, 2),
+        "message": "Significant jump is measured by the newest 5 minutes against the 15 minute and 60 minute rolling baseline.",
+    }
 
 
 def build_shopify_traffic_summary(include_sessions_report=False):
@@ -3224,6 +3422,20 @@ def build_shopify_traffic_summary(include_sessions_report=False):
         latest_dashboard_pings = []
     five = next((item for item in shopify_windows if item["window_minutes"] == 5), shopify_windows[0])
     local_five = next((item for item in local_windows if item["window_minutes"] == 5), local_windows[0])
+    traffic_jump = build_traffic_jump_read(shopify_windows, local_windows)
+    arrival_estimate = {}
+    if sessions_report and sessions_report.get("ok"):
+        arrival_estimate = build_shopify_arrival_estimate(
+            total_visitors=sessions_report.get("total_online_store_visitors") or 0,
+            total_sessions=sessions_report.get("total_sessions") or 0,
+            metrics=sessions_report.get("metrics") or {},
+            query=sessions_report.get("query") or "",
+            series=sessions_report.get("series") or [],
+        )
+    elif manual_sessions_report and manual_sessions_report.get("ok"):
+        arrival_estimate = manual_sessions_report.get("arrival_estimate") or {}
+    else:
+        arrival_estimate = build_shopify_arrival_estimate()
     wave_score = min(
         100,
         int(five.get("events", 0)) * 8
@@ -3236,7 +3448,9 @@ def build_shopify_traffic_summary(include_sessions_report=False):
         "source": "shopify_customer_events_and_supportrd_local",
         "reader_mode": "last_known_good_customer_events_2026_05_01_2300",
         "wave_score": wave_score,
-        "wave_hot": wave_score >= 42 or bool(five.get("hot") or local_five.get("hot")),
+        "wave_hot": wave_score >= 42 or bool(five.get("hot") or local_five.get("hot") or traffic_jump.get("significant")),
+        "traffic_jump": traffic_jump,
+        "arrival_estimate": arrival_estimate,
         "shopify": shopify_windows,
         "local": local_windows,
         "sessions_report": sessions_report,

@@ -567,6 +567,16 @@
     return shopify.find(item=>Number(item.window_minutes) === 5) || local.find(item=>Number(item.window_minutes) === 5) || shopify[0] || local[0] || {};
   }
 
+  function formatTrafficInterval(minutes){
+    const value = Number(minutes || 0);
+    if (!value) return 'waiting';
+    if (value < 1) return `${Math.max(1, Math.round(value * 60))} sec`;
+    if (value < 90) return `${Math.round(value)} min`;
+    const hours = value / 60;
+    if (hours < 48) return `${hours.toFixed(hours < 10 ? 1 : 0)} hr`;
+    return `${(hours / 24).toFixed(1)} days`;
+  }
+
   function renderShopifySessionsReport(report, manualReport){
     const data = report || {};
     const manual = manualReport || {};
@@ -1906,6 +1916,8 @@
     const manualSessionsReport = summary.manual_sessions_report || {};
     const five = trafficFive(summary);
     const waveScore = Math.max(0, Math.min(100, Number(summary.wave_score || 0)));
+    const jump = summary.traffic_jump || {};
+    const arrival = summary.arrival_estimate || manualSessionsReport.arrival_estimate || {};
     const enabled = trafficPingEnabled();
     const pulse = Math.max(0.18, 1.32 - (waveScore / 100) * 1.02).toFixed(2);
     const heartbeat = shopify.find(item=>Number(item.window_minutes) === 5) || {};
@@ -1962,6 +1974,11 @@
             <strong>${esc(heartbeat.dashboard_events || 0)} pings</strong>
             <p>These keep the live board awake. They are separated from real visitor traffic.</p>
           </article>
+          <article class="sr-traffic-card ${jump.significant ? 'hot' : ''}">
+            <span>Significant Jump</span>
+            <strong>${jump.significant ? 'Jump detected' : `${esc(jump.score || 0)} jump score`}</strong>
+            <p>${esc(jump.five_minute_visitors || 0)} visitors / ${esc(jump.five_minute_events || 0)} events in 5m · ${esc(jump.visitor_multiplier || 0)}x visitor baseline.</p>
+          </article>
           ${showSessionsReport ? `<article class="sr-traffic-card">
             <span>Shopify Sessions Report</span>
             <strong>${esc(reportHeadline)}</strong>
@@ -1984,6 +2001,29 @@
             <span>Bot Returns</span>
             ${botReturns.slice(0,5).map(item=>`<b>${esc(item.campaign || item.source || 'bot source')} <em>${esc(item.path || '/')}</em></b>`).join('') || '<b>Waiting for first bot visitor <em>armed</em></b>'}
           </div>
+        </div>
+
+        <div class="sr-traffic-forecast">
+          <article class="hero">
+            <span>Customer Arrival Forecast</span>
+            <strong>${arrival.ok ? `1 new visitor about every ${esc(formatTrafficInterval(arrival.visitor_interval_minutes))}` : 'Waiting for Shopify baseline'}</strong>
+            <p>${arrival.ok ? `${esc(arrival.visitors || 0)} visitors / ${esc(arrival.sessions || 0)} sessions across ${esc(arrival.window_days || 0)} day report window. This is an average arrival rate, not an exact clock.` : 'Paste or connect Shopify sessions plus conversion/bounce/duration to calculate timing.'}</p>
+          </article>
+          <article>
+            <span>Engaged Visitor Timing</span>
+            <strong>${arrival.engaged_sessions ? `about every ${esc(formatTrafficInterval(arrival.engaged_interval_minutes))}` : 'needs bounce rate'}</strong>
+            <p>${arrival.engaged_sessions ? `${esc(arrival.engaged_sessions)} non-bounced sessions using ${esc(arrival.bounce_rate_percent)}% bounce rate.` : 'Bounce rate lets the tracker estimate when a visitor is actually staying.'}</p>
+          </article>
+          <article>
+            <span>Buyer Timing</span>
+            <strong>${arrival.expected_conversions ? `about every ${esc(formatTrafficInterval(Number(arrival.conversion_interval_hours || 0) * 60))}` : 'needs conversion rate'}</strong>
+            <p>${arrival.expected_conversions ? `${esc(arrival.expected_conversions)} expected buyers/orders at ${esc(arrival.conversion_rate_percent)}% conversion.` : 'Conversion rate turns visitors into a rough customer/order clock.'}</p>
+          </article>
+          <article>
+            <span>Live Jump Guard</span>
+            <strong>${jump.significant ? 'Spike mode' : 'steady mode'}</strong>
+            <p>${esc(jump.message || 'The newest 5 minutes are compared against 15m and 60m baselines.')}</p>
+          </article>
         </div>
 
         ${showSessionsReport ? renderShopifySessionsReport(sessionsReport, manualSessionsReport) : ''}
@@ -2278,10 +2318,17 @@
       .sr-traffic-grid{display:grid;grid-template-columns:1.15fr 1fr 1fr 1fr;gap:.65rem;margin-top:.85rem}
       .sr-traffic-card{min-height:7.6rem;padding:.78rem;border-radius:.9rem;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.045)}
       .sr-traffic-card.hero{background:linear-gradient(135deg,rgba(97,239,255,.13),rgba(154,254,143,.08));border-color:rgba(97,239,255,.22)}
+      .sr-traffic-card.hot{border-color:rgba(255,210,122,.38);background:linear-gradient(135deg,rgba(255,210,122,.13),rgba(255,77,92,.08))}
       .sr-traffic-card span,.sr-traffic-paths span{display:block;color:#61efff;font-size:.68rem;font-weight:1000;text-transform:uppercase}
       .sr-traffic-card strong{display:block;margin:.3rem 0;color:#fff;font-size:1.32rem}
       .sr-traffic-card p{color:rgba(247,251,255,.72);line-height:1.34}
       .sr-traffic-presentation{display:grid;grid-template-columns:1.2fr .9fr .9fr;gap:.65rem;margin-top:.75rem}
+      .sr-traffic-forecast{display:grid;grid-template-columns:1.15fr .9fr .9fr .9fr;gap:.65rem;margin-top:.75rem}
+      .sr-traffic-forecast article{min-height:7.7rem;padding:.78rem;border-radius:.9rem;border:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.22)}
+      .sr-traffic-forecast article.hero{border-color:rgba(154,254,143,.28);background:linear-gradient(135deg,rgba(154,254,143,.12),rgba(97,239,255,.07))}
+      .sr-traffic-forecast span{display:block;color:#9afe8f;font-size:.68rem;font-weight:1000;text-transform:uppercase}
+      .sr-traffic-forecast strong{display:block;margin:.25rem 0;color:#fff;font-size:1.2rem;line-height:1.08}
+      .sr-traffic-forecast p{color:rgba(247,251,255,.72);line-height:1.34}
       .sr-traffic-report{display:grid;grid-template-columns:minmax(16rem,.95fr) minmax(18rem,1.45fr);gap:.7rem;margin-top:.75rem;padding:.78rem;border-radius:.9rem;border:1px solid rgba(255,255,255,.1);background:linear-gradient(135deg,rgba(97,239,255,.075),rgba(255,255,255,.035))}
       .sr-traffic-report.connected{border-color:rgba(154,254,143,.32);box-shadow:0 0 26px rgba(154,254,143,.08)}
       .sr-traffic-report-copy span{display:block;color:#61efff;font-size:.68rem;font-weight:1000;text-transform:uppercase}
@@ -2530,7 +2577,7 @@
       .sr-connect-submit-rail>b.warn{color:#ffe4a6;background:rgba(255,210,122,.1);border-color:rgba(255,210,122,.26)}
       .sr-bot-queue .sr-global-grid{max-height:32rem;overflow:auto;padding-right:.15rem}
       .sr-bot-queue small{display:block;margin-top:.5rem;color:#9ff9ff;line-height:1.35}
-      @media(max-width:1120px){.sr-bot-live-grid,.sr-bot-owned-grid,.sr-bot-exec-main,.sr-bot-builder-grid,.sr-bot-placement,.sr-bot-attention-map,.sr-bot-diversify-board,.sr-bot-attention-detail-head,.sr-visitor-fix-route,.sr-traffic-head,.sr-traffic-grid,.sr-traffic-presentation,.sr-traffic-report,.sr-traffic-manual,.sr-bot-site-live,.sr-money-live-grid,.sr-connect-submit-rail{grid-template-columns:1fr}.sr-traffic-actions{justify-content:flex-start}.sr-bot-builder-head{display:grid}.sr-bot-builder-meter{justify-items:start}.sr-bot-orbit{margin:auto}.sr-bot-live-frame{height:22rem}.sr-bot-pipeline{grid-template-columns:repeat(2,minmax(0,1fr))}.sr-bot-phase-rail,.sr-bot-placement-grid,.sr-bot-attention-spokes,.sr-bot-diversify-targets,.sr-traffic-feed,.sr-bot-site-grid,.sr-bot-attention-route-grid,.sr-visitor-diagnosis-grid,.sr-money-live-routes{grid-template-columns:repeat(2,minmax(0,1fr))}.sr-traffic-windows{grid-template-columns:repeat(3,minmax(0,1fr))}.sr-traffic-report-chart{grid-template-columns:repeat(4,minmax(0,1fr))}}
+      @media(max-width:1120px){.sr-bot-live-grid,.sr-bot-owned-grid,.sr-bot-exec-main,.sr-bot-builder-grid,.sr-bot-placement,.sr-bot-attention-map,.sr-bot-diversify-board,.sr-bot-attention-detail-head,.sr-visitor-fix-route,.sr-traffic-head,.sr-traffic-grid,.sr-traffic-presentation,.sr-traffic-forecast,.sr-traffic-report,.sr-traffic-manual,.sr-bot-site-live,.sr-money-live-grid,.sr-connect-submit-rail{grid-template-columns:1fr}.sr-traffic-actions{justify-content:flex-start}.sr-bot-builder-head{display:grid}.sr-bot-builder-meter{justify-items:start}.sr-bot-orbit{margin:auto}.sr-bot-live-frame{height:22rem}.sr-bot-pipeline{grid-template-columns:repeat(2,minmax(0,1fr))}.sr-bot-phase-rail,.sr-bot-placement-grid,.sr-bot-attention-spokes,.sr-bot-diversify-targets,.sr-traffic-feed,.sr-bot-site-grid,.sr-bot-attention-route-grid,.sr-visitor-diagnosis-grid,.sr-money-live-routes{grid-template-columns:repeat(2,minmax(0,1fr))}.sr-traffic-windows{grid-template-columns:repeat(3,minmax(0,1fr))}.sr-traffic-report-chart{grid-template-columns:repeat(4,minmax(0,1fr))}}
     `;
     document.head.appendChild(style);
   }
