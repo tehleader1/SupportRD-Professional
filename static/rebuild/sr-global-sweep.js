@@ -2175,6 +2175,9 @@
     const botReturns = Number(summary.bot_return_total || 0);
     const oneDay = (summary.shopify || []).find(row=>Number(row.window_minutes) === 1440) || {};
     const activeSite = websiteTargetFor(active);
+    const topRoute = routeRows
+      .map(([key, label, hint])=>({ key, label, hint, value:Number(routes[key] || 0) }))
+      .sort((a,b)=>b.value-a.value)[0] || { label:'No routed source yet', hint:'Waiting for commercial-intent movement.', value:0 };
     return `
       <section class="sr-global-band sr-money-live-reading">
         <div class="sr-global-band-head">
@@ -2183,9 +2186,14 @@
         </div>
         <div class="sr-money-live-grid">
           <article class="hero">
-            <span>Exact Synonym</span>
+            <span>What This Number Is</span>
             <strong>Commercial Intent Momentum</strong>
-            <p>This score rises when the site sees buyer-like movement: product routes, checkout intent, premium/pro interest, Studio Jake interest, hair scanner/profile movement, bot outreach routing, repeat accounts, market routes, and confirmed purchases.</p>
+            <p>This is an internal SupportRD intent score stored in the browser rank memory. It rises when the site sees buyer-like movement: product routes, checkout intent, premium/pro interest, Studio Jake interest, hair scanner/profile movement, bot outreach routing, repeat accounts, market routes, and confirmed purchases.</p>
+          </article>
+          <article>
+            <span>Source Of The Climb</span>
+            <strong>${esc(topRoute.label)} · ${esc(topRoute.value)}</strong>
+            <p>${esc(topRoute.hint)} The steady climb usually means SupportRD is repeatedly detecting money-related paths, not that this exact number is live visitor count.</p>
           </article>
           <article>
             <span>People Proof</span>
@@ -2263,7 +2271,7 @@
       .sr-bot-live-dot:before{content:"";width:.55rem;height:.55rem;border-radius:999px;background:#9afe8f;box-shadow:0 0 0 0 rgba(154,254,143,.55);animation:srBotPulse 1.25s infinite}
       @keyframes srBotPulse{70%{box-shadow:0 0 0 .45rem rgba(154,254,143,0)}100%{box-shadow:0 0 0 0 rgba(154,254,143,0)}}
       .sr-money-live-reading{border-color:rgba(255,210,122,.24);background:radial-gradient(circle at 6% 6%,rgba(255,210,122,.15),transparent 18rem),linear-gradient(135deg,rgba(4,10,22,.96),rgba(23,19,8,.88))}
-      .sr-money-live-grid{display:grid;grid-template-columns:1.15fr .85fr .85fr;gap:.7rem;margin-bottom:.75rem}
+      .sr-money-live-grid{display:grid;grid-template-columns:1.15fr repeat(3,minmax(0,.85fr));gap:.7rem;margin-bottom:.75rem}
       .sr-money-live-grid article,.sr-money-live-routes article{padding:.75rem;border:1px solid rgba(255,255,255,.1);border-radius:.85rem;background:rgba(255,255,255,.045)}
       .sr-money-live-grid article.hero{border-color:rgba(255,210,122,.25);background:rgba(255,210,122,.08)}
       .sr-money-live-grid span,.sr-money-live-routes span,.sr-money-live-history span{display:block;color:#ffdf8d;font-size:.7rem;font-weight:1000;text-transform:uppercase;letter-spacing:.06em}

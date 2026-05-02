@@ -239,7 +239,8 @@
           </div>
         `).join('')}
       </div>
-      <small class="sr-money-note">Synonym: Commercial Intent Momentum. New movement is routed live; legacy is the older blended climb.</small>
+      <small class="sr-money-note">Source: SupportRD browser rank memory. Bot sweeps, product/catalog clicks, checkout paths, Financial, Globaltracker, account returns, and confirmed payments add here.</small>
+      <small class="sr-money-note">Important: this is not raw visitors. Shopify visitors/events are the proof lane; this number is commercial-intent momentum.</small>
     `;
   }
 
@@ -367,7 +368,7 @@
     const shopify = state.shopify || {status:'watch', balance:'Verify live'};
     el.innerHTML = `
       <article><span>#1 Professional</span><strong>${pro}</strong><small>ARIA rank contact score</small></article>
-      <article class="sr-money-intent-card"><span>Money Intent Momentum</span><strong>${money}</strong><small>Commercial attention rank</small>${renderMoneyRouteMap(state, money)}</article>
+      <article class="sr-money-intent-card"><span>Money Intent Momentum</span><strong>${money}</strong><small>Internal commercial-intent score, not raw visitors.</small>${renderMoneyRouteMap(state, money)}</article>
       <article><span>Seriousness</span><strong>${serious}</strong><small>Admin visible usage signal</small></article>
       <article><span>Shopify</span><strong>${shopify.status || 'watch'}</strong><small>${shopify.balance || 'Verify endpoint'}</small></article>
     `;
