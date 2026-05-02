@@ -26,7 +26,7 @@ from openai import OpenAI
 
 from engine_routes import engine
 from content_engine import trending_products, reorder_suggestions
-from backend.outreach_engine import outreach_engine_bp
+from backend.outreach_engine import outreach_engine_bp, reset_outreach_engine_storage
 from backend.viral_engine import viral_engine_bp
 from backend.render_status import render_status_bp
 
@@ -71,6 +71,7 @@ SHOPIFY_BLOG_ID = os.environ.get("SHOPIFY_BLOG_ID", "")
 SHOPIFY_WEBHOOK_SECRET = os.environ.get("SHOPIFY_WEBHOOK_SECRET", "")
 SHOPIFY_PLAN_VARIANT_MAP_JSON = os.environ.get("SHOPIFY_PLAN_VARIANT_MAP_JSON", "")
 SHOPIFY_PLAN_SKU_MAP_JSON = os.environ.get("SHOPIFY_PLAN_SKU_MAP_JSON", "")
+GLOBALTRACKER_RESET_STAMP = os.environ.get("GLOBALTRACKER_RESET_STAMP", "20260502_fresh_launch_reset_01")
 STUDIO_STORAGE_DIR = os.environ.get("STUDIO_STORAGE_DIR", os.path.join(app.root_path, "studio_data"))
 VALID_SUBSCRIPTION_PLANS = {
     "free",
@@ -4016,6 +4017,53 @@ def set_setting(key, value):
         return True
     except:
         return False
+
+
+def reset_globaltracker_data_once():
+    if not GLOBALTRACKER_RESET_STAMP:
+        return {"ok": True, "ran": False, "reason": "reset_stamp_empty"}
+    if get_setting("globaltracker_reset_stamp", "") == GLOBALTRACKER_RESET_STAMP:
+        return {"ok": True, "ran": False, "reason": "already_reset", "stamp": GLOBALTRACKER_RESET_STAMP}
+    deleted = {}
+    tracker_tables = [
+        "local_remote_traffic_events",
+        "shopify_traffic_events",
+        "bot_return_visits",
+        "shopify_manual_session_reports",
+        "local_remote_inbox_offers",
+        "local_remote_conversion_events",
+    ]
+    try:
+        conn = sqlite3.connect(CREDIT_DB_PATH)
+        cur = conn.cursor()
+        for table in tracker_tables:
+            try:
+                deleted[table] = int((cur.execute(f"SELECT COUNT(*) FROM {table}").fetchone() or [0])[0] or 0)
+                cur.execute(f"DELETE FROM {table}")
+            except:
+                deleted[table] = 0
+        conn.commit()
+        conn.close()
+    except:
+        pass
+    outreach_reset = {}
+    try:
+        outreach_reset = reset_outreach_engine_storage()
+    except Exception as e:
+        outreach_reset = {"ok": False, "error": str(e)[:160]}
+    set_setting("globaltracker_reset_stamp", GLOBALTRACKER_RESET_STAMP)
+    set_setting("globaltracker_reset_at", datetime.utcnow().isoformat() + "Z")
+    try:
+        SHOPIFY_SESSIONS_REPORT_CACHE.update({"at": 0, "payload": None})
+    except:
+        pass
+    return {
+        "ok": True,
+        "ran": True,
+        "stamp": GLOBALTRACKER_RESET_STAMP,
+        "deleted": deleted,
+        "outreach_reset": outreach_reset,
+    }
 
 
 def _mask_ip(ip):
@@ -9017,6 +9065,10 @@ init_voice_db()
 init_diary_db()
 init_profile_analysis_db()
 init_local_remote_db()
+try:
+    reset_globaltracker_data_once()
+except:
+    pass
 set_setting("money_guard_enabled", "1")
 try:
     run_trade_bots()

@@ -1,6 +1,7 @@
 (function(){
   const root = window.SupportRDRebuild = window.SupportRDRebuild || {};
-  const STORE_KEY = 'srGlobalSweepV1';
+  const STORE_KEY = 'srGlobalSweepFresh20260502a';
+  const RESET_SENTINEL_KEY = 'srGlobalSweepFresh20260502aDone';
   const SWEEP_MS = 10 * 60 * 1000;
   const SERVER_STATUS_ENDPOINT = '/api/global-sweep/status';
   const SERVER_RUN_ENDPOINT = '/api/global-sweep/run';
@@ -25,6 +26,24 @@
   const TRAFFIC_FETCH_MS = 6000;
   const PERSONAL_ENDPOINTS = ['/api/tracker/personal','/api/personal-tracker','/api/tracker'];
   const SHOPIFY_ENDPOINTS = ['/api/shopify/live','/api/shopify/live-analytics','/api/shopify/tracker'];
+
+  function resetLegacyGlobalTrackerState(){
+    try {
+      if (localStorage.getItem(RESET_SENTINEL_KEY) === '1') return;
+      [
+        'srGlobalSweepV1',
+        'srGlobalSweepV2',
+        'srPersonalTracker',
+        'srShopifyTracker',
+        'srTrafficLastAlertAt',
+        'srTrafficFirstBotReturnKey',
+        'srTrafficClientId'
+      ].forEach(key => localStorage.removeItem(key));
+      localStorage.setItem(RESET_SENTINEL_KEY, '1');
+    } catch {}
+  }
+
+  resetLegacyGlobalTrackerState();
 
   function esc(value){
     return String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));

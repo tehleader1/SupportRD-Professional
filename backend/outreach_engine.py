@@ -236,6 +236,22 @@ def db():
     return conn
 
 
+def reset_outreach_engine_storage():
+    conn = db()
+    try:
+        counts = {}
+        for table in ("outreach_opportunities", "outreach_engine_events", "outreach_followups"):
+            try:
+                counts[table] = int((conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone() or [0])[0] or 0)
+                conn.execute(f"DELETE FROM {table}")
+            except Exception:
+                counts[table] = 0
+        conn.commit()
+        return {"ok": True, "deleted": counts}
+    finally:
+        conn.close()
+
+
 def is_local_request():
     host = (request.host or "").split(":")[0]
     remote = (request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip()
