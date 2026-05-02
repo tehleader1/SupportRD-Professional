@@ -9897,7 +9897,7 @@ def outreach_owned_posts():
         "surface": "support_rd_faq_developer_feed",
         "posting_mode": SUPPORTRD_POSTING_MODE,
         "owned_posting_enabled": _support_rd_owned_posting_enabled(),
-        "auto_approval_scope": "SupportRD-owned/internal surfaces only",
+        "auto_approval_scope": "SupportRD-owned/internal surfaces can post when posting mode is enabled; external lanes need a permitted connector.",
         "external_channel_status": "third_party_social_comment_email_requires_connected_permitted_channel",
         "posts": list_faq_developer_posts(limit=request.args.get("limit") or 12),
     }
@@ -9916,7 +9916,7 @@ def outreach_owned_posts_publish():
         return {
             "ok": False,
             "error": "owner_authorization_required",
-            "message": "Use the admin session or X-Outreach-Admin-Token for owned posting.",
+            "message": "Use the admin session or X-Outreach-Admin-Token for owned posting. Auto-click will keep running and retry after the owner token is saved.",
         }, 401
     body = request.json if request.is_json else {}
     message, title, surface = _owned_post_message(body)

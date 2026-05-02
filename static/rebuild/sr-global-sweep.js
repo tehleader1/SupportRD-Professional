@@ -80,8 +80,11 @@
     return headers;
   }
 
-  function saveOutreachOwnerToken(){
-    const token = window.prompt('Paste the outreach admin token for SupportRD-owned posting.');
+  function saveOutreachOwnerToken(reason){
+    const promptText = reason
+      ? `${reason}\n\nPaste the outreach admin token.`
+      : 'Paste the outreach admin token for SupportRD approvals.';
+    const token = window.prompt(promptText);
     if (token === null) return false;
     try {
       const clean = String(token || '').trim();
@@ -138,7 +141,7 @@
     };
     if (body) options.body = JSON.stringify(body);
     let res = await fetch(url, options);
-    if (res.status === 401 && saveOutreachOwnerToken()) {
+    if ((res.status === 401 || res.status === 403) && saveOutreachOwnerToken('Owner approval token is required for this button.')) {
       const retry = {
         method:'POST',
         cache:'no-store',
@@ -366,7 +369,7 @@
         headers: outreachAuthHeaders(true),
         body: JSON.stringify(payload)
       });
-      if (res.status === 401 && saveOutreachOwnerToken()) {
+      if ((res.status === 401 || res.status === 403) && saveOutreachOwnerToken('Publishing to SupportRD-owned surfaces needs your owner token.')) {
         res = await fetch(`${OUTREACH_OWNED_POSTS_ENDPOINT}/publish`, {
           method:'POST',
           cache:'no-store',
@@ -508,21 +511,14 @@
   async function runAutoApproveTick(){
     if (!autoApproveEnabled()) return null;
     const state = read();
-    if (!outreachOwnerToken()) {
-      writeAutoApproveStatus({
-        ok:false,
-        status:'owner_token_needed',
-        title:'Set outreach admin token before auto-click approval',
-        provider:'connect_api'
-      });
-      return null;
-    }
     const movements = Array.isArray(state.outreachMovements) ? state.outreachMovements : [];
     const start = Math.max(0, Number(state.outreachActiveIndex || 0));
     const ordered = movements.length
       ? movements.slice(start).concat(movements.slice(0, start))
       : [currentMovement(state)];
-    const candidate = ordered.find(item=>isAutoApproveEligible(item, state));
+    const candidate = ordered
+      .filter(item=>isAutoApproveEligible(item, state))
+      .sort((a,b)=>autoApproveSortScore(b) - autoApproveSortScore(a))[0];
     if (!candidate) {
       writeAutoApproveStatus({
         ok:false,
@@ -1206,6 +1202,25 @@
     return !autoApprovedFingerprints(state).includes(autoApproveFingerprint(item));
   }
 
+  function autoApproveSortScore(item){
+    const info = connectedApprovalInfoFor(item);
+    const text = JSON.stringify(item || {}).toLowerCase();
+    let score = 0;
+    if (info.owned) score += 1000;
+    if (info.channel?.connected) score += 260;
+    if (info.provider === 'connect_api') score += 80;
+    if (info.provider === 'publisher_api') score += 72;
+    if (info.provider === 'email_or_form_api') score += 68;
+    if (info.provider === 'event_listing_api') score += 62;
+    if (info.provider === 'business_listing_api') score += 60;
+    if (info.provider === 'wordpress_api') score += 58;
+    if (info.provider === 'social_platform_api') score += 52;
+    if (text.includes('owned') || text.includes('supportrd faq lounge')) score += 120;
+    if (text.includes('post') || text.includes('comment') || text.includes('story')) score += 36;
+    score += Number(item?.attention_score || item?.score || item?.focus_rank || 0);
+    return score;
+  }
+
   function recordAutoApproval(item, result, fingerprint){
     const state = read();
     const info = connectedApprovalInfoFor(item);
@@ -1274,7 +1289,7 @@
           <button type="button" data-connected-refresh>Refresh API</button>
           ${submitResult.status ? `<b class="${submitResult.ok ? 'ok' : 'warn'}">${esc(connectedResultText(submitResult, provider, channel))}</b>` : ''}
           <small class="sr-auto-approve-status">
-            ${esc(autoOn ? `Auto sends 1 ready target every ${Math.round(OUTREACH_AUTO_APPROVE_MS / 1000)}s` : 'Auto approval paused')}
+            ${esc(autoOn ? `Auto posts/feeds 1 ready target every ${Math.round(OUTREACH_AUTO_APPROVE_MS / 1000)}s` : 'Auto approval paused')}
             · ${esc(autoCount)} sent
             ${autoStatus.status ? ` · ${esc(autoStatus.status)}` : ''}
             ${autoLast.domain ? ` · ${esc(autoLast.domain)}` : ''}

@@ -1405,9 +1405,12 @@ def submit_through_connected_api(payload):
 
 def settings_payload():
     owned_enabled = SUPPORTRD_POSTING_MODE in OWNED_POSTING_MODES
+    connected_enabled = bool(CONNECT_API_URL)
     allowed_work = list(BOT_SETTINGS.get("allowed_work", []))
     if owned_enabled:
         allowed_work.append("owned_support_rd_publish")
+    if connected_enabled:
+        allowed_work.append("connected_api_auto_feed")
     blocked_without_channel = [
         "external_social_post",
         "external_comment",
@@ -1422,8 +1425,10 @@ def settings_payload():
         "owned_posting_enabled": owned_enabled,
         "owned_auto_approval": owned_enabled,
         "permission_open_targets_enabled": PERMISSION_OPEN_TARGETS_ENABLED,
-        "auto_approval_scope": "SupportRD-owned/internal surfaces only",
-        "permission_open_scope": "Public listing/submission/free-post targets are prioritized as ready targets, but third-party posting still requires a permitted connected channel.",
+        "connected_auto_submit_enabled": connected_enabled,
+        "connected_auto_submit_scope": "Connected provider lanes can be fed through the approved webhook/API bridge when the owner token approves the move.",
+        "auto_approval_scope": "SupportRD-owned/internal surfaces publish internally; connected provider lanes feed the connected API; unconnected third-party targets stay queued.",
+        "permission_open_scope": "Public listing/submission/free-post targets are prioritized as ready targets. Third-party posting still requires a permitted connected channel, then the green approval can feed that channel.",
         "random_discovery_targets_enabled": RANDOM_DISCOVERY_TARGETS_ENABLED,
         "random_discovery_window_seconds": RANDOM_DISCOVERY_WINDOW_SECONDS,
         "random_discovery_scope": "Each movement receives a timed random discovery target from the lane pool; the connected API receives that exact found target and comment draft.",
@@ -1438,10 +1443,10 @@ def settings_payload():
         "promo_hooks": SUPPORT_RD_PROMO_HOOKS,
         "explicit_approval_path": [
             "bot drafts follow-up",
-            "owner approval is automatic for SupportRD-owned surfaces when posting mode is enabled",
-            "owned SupportRD surfaces can publish internally",
-            "permission-open external targets move to ready queue",
-            "external websites/social accounts remain approved-ready until a permitted account/API is connected",
+            "owner token unlocks green approval and auto-click approval",
+            "SupportRD-owned surfaces auto-publish internally when posting mode is enabled",
+            "connected provider lanes auto-feed the approved webhook/API bridge",
+            "unconnected outside websites/social accounts remain queued until a permitted channel is connected",
         ],
         "website_targets": WEBSITE_TARGETS,
         "placement_lanes": [
@@ -1453,7 +1458,7 @@ def settings_payload():
             }
             for lane in ATTENTION_LANES
         ],
-        "safety": "The bot may draft, queue, diagram, log, and publish internally to SupportRD-owned surfaces when posting mode is enabled. External websites/social accounts still require a permitted connected channel.",
+        "safety": "The bot may draft, queue, diagram, log, publish internally to SupportRD-owned surfaces, and feed approved connected API lanes. External websites/social accounts still require a permitted connected channel.",
     }
 
 
@@ -1478,6 +1483,14 @@ def movement_for(item):
     attention_routes = attention_route_details_for(item)
     attention = int(attention_routes["score"])
     website_target = website_target_for(item, lane)
+    provider = connected_provider_for_target(website_target)
+    connector = connector_for_provider(provider)
+    if provider == "owned_support_rd" and connector["configured"]:
+        approval_boundary = "Auto-post lane: SupportRD-owned surface can publish internally when auto-click is on."
+    elif connector["configured"]:
+        approval_boundary = f"Auto-feed lane: green approval can send this draft through {connector['label']}."
+    else:
+        approval_boundary = f"Queued lane: {connector['label']} is not connected yet, so this stays as a draft."
     if "letter" in cat or "story" in cat:
         movement = "Draft story/family letter/post -> make it human, useful, and permission-based -> queue owner review before any platform action."
         next_action = "Create more story posts, family letters, and owned-channel captions."
@@ -1564,7 +1577,7 @@ def movement_for(item):
         "movement": movement,
         "next_action": next_action,
         "draft": (item.get("copy") or {}).get("message") or item.get("hook") or "",
-        "approval_boundary": "Draft only. Manual approval required before posting, emailing, submitting, commenting, or using an account.",
+        "approval_boundary": approval_boundary,
         "updated_at": item.get("updated_at") or item.get("created_at") or utc(),
     }
 
@@ -1717,8 +1730,8 @@ def approve(opp_id):
         conn.commit()
     finally:
         conn.close()
-    log_event("approved", {"id": opp_id, "note": "Approval does not send, post, email, or submit automatically."})
-    return jsonify({"ok": True, "id": opp_id, "status": "approved", "send_status": "not_sent_manual_next_step"})
+    log_event("approved", {"id": opp_id, "note": "Approval is ready for SupportRD-owned publish or a permitted connected API lane."})
+    return jsonify({"ok": True, "id": opp_id, "status": "approved", "send_status": "approved_ready_for_owned_or_connected_lane"})
 
 
 @outreach_engine_bp.route("/api/outreach/reject/<int:opp_id>", methods=["POST"])
@@ -1822,7 +1835,7 @@ def movements():
         "followups": followups[:40],
         "settings": settings_payload(),
         "connectedSubmissions": submission_rows(20),
-        "safety": "Explicit approval path enabled. Drafts are queued for approval; external websites/social accounts require a permitted connected channel before automated action.",
+        "safety": "Auto-click path enabled. SupportRD-owned surfaces can publish internally; connected provider lanes can feed the approved API bridge; unconnected outside targets stay queued.",
     })
 
 
@@ -1876,7 +1889,7 @@ def report():
         "focusLive": focus_live_payload([movement_for(item) for item in report_rows[:80]]),
         "queued": [item for item in report_rows if item.get("status") == "queued"][:50],
         "approved": [item for item in report_rows if item.get("status") == "approved"][:50],
-        "safety": "Drafts and logs only. Manual approval is required before any post, email, submission, comment, or account action.",
+        "safety": "Owned posts and connected API feeds can run through auto-click; outside websites/social accounts still require a permitted connected channel.",
     })
 
 
