@@ -1120,7 +1120,9 @@
       status: 'queued_for_owner_review',
       action: 'open_review_target',
       campaign: slugify(`${label}-${item?.title || item?.category || ''}`),
-      tracking_url: `https://supportrd.com?utm_source=supportrd_bot&utm_medium=outreach&sr_bot=1&utm_campaign=${slugify(`${label}-${item?.title || item?.category || ''}`)}`,
+      tracking_url: 'https://supportrd.com',
+      public_url: 'https://supportrd.com',
+      internal_campaign: `utm_source=supportrd_bot&utm_medium=outreach&sr_bot=1&utm_campaign=${slugify(`${label}-${item?.title || item?.category || ''}`)}`,
       permission_note: 'Research/draft target only. Owner approval is required before external action.'
     };
   }
@@ -1283,7 +1285,7 @@
             <span>Current Website Target</span>
             <strong>${esc(current.label || current.domain || 'Target website')}</strong>
             <p>${esc(currentOwned ? 'SupportRD-owned surface. The bot can work here in auto-owned mode; outside websites still stay review-ready.' : (current.randomized ? `Random found target. Search route: ${current.search_query || current.purpose || 'fresh website discovery'}` : (current.purpose || 'The bot is preparing a draft/review route for this website lane.')))}</p>
-            <code>${esc(current.tracking_url || 'https://supportrd.com?utm_source=supportrd_bot&sr_bot=1')}</code>
+            <code>${esc(current.public_url || current.tracking_url || 'https://supportrd.com')}</code>
           </div>
           <a href="${esc(current.url || 'https://supportrd.com')}" target="_blank" rel="noopener">${currentOwned ? 'Open Owned Feed' : 'Open Website'}</a>
         </div>
