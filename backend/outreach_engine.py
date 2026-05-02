@@ -16,6 +16,7 @@ PUBLIC_SUPPORT_LINK = "https://supportrd.com"
 BOT_AGENT_REF = os.environ.get("SUPPORT_RD_BOT_AGENT_REF", "agt_69f2460cc584819192e4a3a276e8b004")
 ENGINE_ENABLED = os.environ.get("OUTREACH_ENGINE_ENABLED", "true").lower() == "true"
 ENGINE_INTERVAL_SECONDS = int(os.environ.get("OUTREACH_ENGINE_INTERVAL_SECONDS", "900"))
+SWARM_ENABLED = os.environ.get("OUTREACH_BOT_SWARM_ENABLED", "true").strip().lower() != "false"
 COMMENT_FUNNEL_PATH = os.environ.get("SUPPORT_RD_COMMENT_FUNNEL_PATH", "/hair-problems")
 ADMIN_TOKEN = (
     os.environ.get("OUTREACH_ADMIN_TOKEN")
@@ -257,6 +258,7 @@ BOT_SETTINGS = {
     "draft_mode_only": True,
     "approval_required": True,
     "owned_auto_approval": SUPPORTRD_POSTING_MODE in OWNED_POSTING_MODES,
+    "swarm_enabled": SWARM_ENABLED,
     "behalf_mode": "intelligent_followup_drafts_with_explicit_approval",
     "attention_low_threshold": 62,
     "attention_goal": "Hone in on owner-reviewed comments, story posts, family letters, and community-safe posts while diversifying placements when attention is weak.",
@@ -265,6 +267,133 @@ BOT_SETTINGS = {
     "allowed_work": ["research", "draft", "queue", "log", "diagram", "owner_review"],
     "blocked_without_approval": ["post", "comment", "email", "submit", "use_account", "message"],
 }
+
+BOT_SWARM_WORKERS = [
+    {
+        "id": "owned_public_publisher",
+        "name": "Public Owned Publisher",
+        "role": "Turns approved SupportRD drafts into public, crawlable posts on SupportRD-owned pages.",
+        "lane": "owned_support_rd",
+        "terms": ["faq lounge", "owned", "support_rd", "support queue", "family", "story", "comment"],
+        "cadence": "1 ready public owned post per safe approval cycle",
+        "can_auto_publish": True,
+        "guardrail": "Only publishes on SupportRD-owned public surfaces or connected pages you control.",
+    },
+    {
+        "id": "comment_helper",
+        "name": "Comment Helper",
+        "role": "Builds value-first hair replies for approved comments and social video conversations.",
+        "lane": "social_platform_api",
+        "terms": ["comment", "social video", "youtube", "instagram", "tiktok", "reels", "shorts"],
+        "cadence": "draft many, submit only through permitted connected channel",
+        "can_auto_publish": False,
+        "guardrail": "No random-site autoposting, no ban evasion, no account action without a permitted connector.",
+    },
+    {
+        "id": "family_story_writer",
+        "name": "Family Story Writer",
+        "role": "Writes founder-led family, community, and personal story posts in Anthony's SupportRD voice.",
+        "lane": "owned_support_rd",
+        "terms": ["family", "story", "letter", "personal", "facebook", "caption", "community"],
+        "cadence": "keeps story angles fresh across owned/public channels",
+        "can_auto_publish": True,
+        "guardrail": "Uses SupportRD images and owner-approved personal photos only.",
+    },
+    {
+        "id": "blog_pitcher",
+        "name": "Blog Pitcher",
+        "role": "Prepares free blog posts, guest article pitches, featured placements, and editor-ready drafts.",
+        "lane": "publisher_api",
+        "terms": ["blog", "guest", "featured", "newspaper", "rating", "review", "publisher"],
+        "cadence": "builds unique pitch packets instead of repeating the same request",
+        "can_auto_publish": False,
+        "guardrail": "Submits only to allowed contributor/publication routes through connected API or owner review.",
+    },
+    {
+        "id": "salon_store_partner",
+        "name": "Salon Store Partner",
+        "role": "Builds salon, stylist, beauty-supply, and hair-store partnership messages.",
+        "lane": "email_or_form_api",
+        "terms": ["salon", "hair store", "beauty supply", "stylist", "store"],
+        "cadence": "rotates local, product education, after-care, and QR-support angles",
+        "can_auto_publish": False,
+        "guardrail": "No unsolicited blasting; uses permitted forms, emails, or owner-approved outreach.",
+    },
+    {
+        "id": "college_career_advocate",
+        "name": "College Career Advocate",
+        "role": "Creates college, community-college, career, workforce, and student-ready hair confidence posts.",
+        "lane": "email_or_form_api",
+        "terms": ["college", "community college", "career", "student", "workforce", "job", "interview"],
+        "cadence": "spreads message diversity across school, career, family, and workplace angles",
+        "can_auto_publish": False,
+        "guardrail": "Uses official student-success, bulletin, career, or connected channels only.",
+    },
+    {
+        "id": "attention_router",
+        "name": "Attention Router",
+        "role": "Measures attention lanes and moves weak traffic into more unique low-competition placements.",
+        "lane": "connect_api",
+        "terms": ["attention", "diversity", "library", "nonprofit", "event", "q&a", "vendor"],
+        "cadence": "continuously diversifies when attention is weak",
+        "can_auto_publish": False,
+        "guardrail": "Routes opportunities; does not bypass platform rate limits or moderation.",
+    },
+]
+
+
+def public_swarm_worker(worker):
+    return {
+        "id": worker.get("id"),
+        "name": worker.get("name"),
+        "role": worker.get("role"),
+        "lane": worker.get("lane"),
+        "cadence": worker.get("cadence"),
+        "can_auto_publish": bool(worker.get("can_auto_publish")),
+        "guardrail": worker.get("guardrail"),
+    }
+
+
+def swarm_worker_for(item, lane=None):
+    if not SWARM_ENABLED:
+        return public_swarm_worker(BOT_SWARM_WORKERS[-1])
+    lane = lane or {}
+    text = " ".join([
+        str(item.get("category") or ""),
+        str(item.get("title") or ""),
+        str(item.get("target") or ""),
+        str(item.get("hook") or ""),
+        str(lane.get("id") or ""),
+        str(lane.get("label") or ""),
+    ]).lower()
+    for worker in BOT_SWARM_WORKERS:
+        if any(term in text for term in worker.get("terms", [])):
+            return public_swarm_worker(worker)
+    return public_swarm_worker(BOT_SWARM_WORKERS[-1])
+
+
+def swarm_payload(movement_rows=None):
+    movement_rows = movement_rows or []
+    active_counts = {worker["id"]: 0 for worker in BOT_SWARM_WORKERS}
+    for movement in movement_rows:
+        worker = movement.get("swarm_worker") or {}
+        worker_id = worker.get("id")
+        if worker_id in active_counts:
+            active_counts[worker_id] += 1
+    workers = []
+    for worker in BOT_SWARM_WORKERS:
+        public = public_swarm_worker(worker)
+        public["active_movements"] = active_counts.get(worker["id"], 0)
+        workers.append(public)
+    return {
+        "enabled": SWARM_ENABLED,
+        "name": "SupportRD Safe Growth Swarm",
+        "strategy": "Duplicate the work into specialist drafting/routing lanes, not duplicate accounts or spam velocity.",
+        "public_owned_surface_policy": "SupportRD-owned surfaces are public/crawlable when posted, such as FAQ Lounge, hair-problems, Growth Hub, and product/support pages.",
+        "auto_publish_scope": "Only SupportRD-owned public surfaces can auto-publish when posting mode is enabled; outside platforms require a permitted connector.",
+        "anti_ban_policy": "No account rotation, proxy tricks, captcha bypassing, speed hacks, fake engagement, or random-site autoposting.",
+        "workers": workers,
+    }
 
 _scheduler_started = False
 _scheduler_lock = threading.Lock()
@@ -630,7 +759,7 @@ def focus_live_payload(movement_rows):
         "active_count": len([item for item in movement_rows if item.get("priority_lane") == "comments_story_family"]),
         "views": views,
         "top_results": top_items,
-        "live_note": "These are live owner-review drafts. Nothing is posted, emailed, submitted, or commented automatically.",
+        "live_note": "These are live owner-review drafts. Auto-click only runs on SupportRD-owned public surfaces or permitted connected channels; unconnected outside targets stay queued.",
     }
 
 
@@ -1039,8 +1168,8 @@ def website_target_for(item, lane=None):
         "found_at": utc(),
         "found_reason": "Random timed discovery target selected for this approved bot movement." if RANDOM_DISCOVERY_TARGETS_ENABLED else "Static target selected for this review lane.",
         "search_query": target.get("search_query") or f"{lane.get('label', 'SupportRD')} SupportRD natural hair",
-        "status": "owned_surface_live" if owned_surface else "queued_for_owner_review",
-        "action": "open_owned_surface" if owned_surface else "open_review_target",
+        "status": "public_owned_surface_live" if owned_surface else "queued_for_owner_review",
+        "action": "open_public_owned_feed" if owned_surface else "open_review_target",
         "tracking_url": PUBLIC_SUPPORT_LINK,
         "public_url": PUBLIC_SUPPORT_LINK,
         "internal_tracking_url": comment_funnel_url(campaign, lane_id),
@@ -1048,7 +1177,7 @@ def website_target_for(item, lane=None):
         "conversion_goal": "hair issue, product interest, account signup, or catalog checkout",
         "campaign": campaign,
         "permission_note": (
-            "SupportRD-owned/internal surface. In auto-owned mode, the bot can publish internally here."
+            "SupportRD-owned public surface. In auto-owned mode, the bot can publish a public crawlable SupportRD post here."
             if owned_surface else
             "Research/draft target only. The bot does not post, comment, email, submit, or use accounts without owner approval."
         ),
@@ -1199,7 +1328,7 @@ def connected_channel_status():
             "SUPPORTRD_CONNECT_API_TOKEN",
         ],
         "channels": [
-            channel("owned_support_rd", "SupportRD owned feed", "FAQ Lounge, Growth Hub, hair-problems, and SupportRD-owned surfaces.", "publish_inside_supportrd"),
+            channel("owned_support_rd", "SupportRD public feed", "FAQ Lounge, Growth Hub, hair-problems, and SupportRD-owned public surfaces.", "publish_public_supportrd"),
             channel("connect_api", "Generic connected submit API", "Owner-approved handoff to your permitted posting/email/social integration.", "POST approved draft payload to SUPPORTRD_CONNECT_API_URL", "missing_connect_api_url"),
             channel("email_or_form_api", "Email/form outreach connector", "Salon, hair store, college, career, blog, or publisher outreach that has an allowed form/email route.", "handoff_to_connect_api"),
             channel("social_platform_api", "Social/comment platform connector", "Only accounts/platforms you own or are authorized to use, through permitted APIs or the connected webhook.", "handoff_to_connect_api", "connect_api_missing_for_social_platform_api"),
@@ -1327,8 +1456,10 @@ def submit_through_connected_api(payload):
     owned = provider == "owned_support_rd"
     if owned:
         response = {
-            "message": "Use the SupportRD owned publish endpoint for this card. The UI can publish it internally now.",
+            "message": "Use the SupportRD owned publish endpoint for this card. The UI can publish it as a public SupportRD-owned post now.",
             "publish_endpoint": "/api/outreach/owned-posts/publish",
+            "public_url": "https://supportrd.com/FAQ",
+            "surface": "SupportRD FAQ Lounge / Developer Feed",
         }
         submission_id = insert_submission(source_type, source_id, provider, target, draft, "ready_for_owned_publish", response)
         log_event("connected_submit_ready_owned", {"id": submission_id, "source_id": source_id, "provider": provider})
@@ -1446,8 +1577,11 @@ def settings_payload():
         "permission_open_targets_enabled": PERMISSION_OPEN_TARGETS_ENABLED,
         "connected_auto_submit_enabled": connected_enabled,
         "connected_auto_submit_scope": "Connected provider lanes can be fed through the approved webhook/API bridge when the owner token approves the move.",
-        "auto_approval_scope": "SupportRD-owned/internal surfaces publish internally; connected provider lanes feed the connected API; unconnected third-party targets stay queued.",
+        "auto_click_meaning": "Auto-click means: publish to SupportRD-owned public pages or submit through a permitted connected API/form/social/email provider. If no permitted channel is connected, the move stays queued.",
+        "auto_approval_scope": "SupportRD-owned public surfaces publish as live public SupportRD posts; connected provider lanes feed the connected API; unconnected third-party targets stay queued.",
         "permission_open_scope": "Public listing/submission/free-post targets are prioritized as ready targets. Third-party posting still requires a permitted connected channel, then the green approval can feed that channel.",
+        "public_owned_surface_scope": "FAQ Lounge, hair-problems, Growth Hub, public account/backlink pages, product/support pages, and any SupportRD-owned page can be used as public crawlable posting surfaces.",
+        "bot_swarm": swarm_payload(),
         "random_discovery_targets_enabled": RANDOM_DISCOVERY_TARGETS_ENABLED,
         "random_discovery_window_seconds": RANDOM_DISCOVERY_WINDOW_SECONDS,
         "random_discovery_scope": "Each movement receives a timed random discovery target from the lane pool; the connected API receives that exact found target and comment draft.",
@@ -1463,7 +1597,7 @@ def settings_payload():
         "explicit_approval_path": [
             "bot drafts follow-up",
             "owner token unlocks green approval and auto-click approval",
-            "SupportRD-owned surfaces auto-publish internally when posting mode is enabled",
+            "SupportRD-owned surfaces auto-publish as public SupportRD posts when posting mode is enabled",
             "connected provider lanes auto-feed the approved webhook/API bridge",
             "unconnected outside websites/social accounts remain queued until a permitted channel is connected",
         ],
@@ -1477,7 +1611,7 @@ def settings_payload():
             }
             for lane in ATTENTION_LANES
         ],
-        "safety": "The bot may draft, queue, diagram, log, publish internally to SupportRD-owned surfaces, and feed approved connected API lanes. External websites/social accounts still require a permitted connected channel.",
+        "safety": "The bot may draft, queue, diagram, log, publish publicly to SupportRD-owned surfaces, and feed approved connected API lanes. External websites/social accounts still require a permitted connected channel.",
     }
 
 
@@ -1504,8 +1638,9 @@ def movement_for(item):
     website_target = website_target_for(item, lane)
     provider = connected_provider_for_target(website_target)
     connector = connector_for_provider(provider)
+    swarm_worker = swarm_worker_for(item, lane)
     if provider == "owned_support_rd" and connector["configured"]:
-        approval_boundary = "Auto-post lane: SupportRD-owned surface can publish internally when auto-click is on."
+        approval_boundary = "Auto-post lane: SupportRD-owned public surface can publish a live SupportRD post when auto-click is on."
     elif connector["configured"]:
         approval_boundary = f"Auto-feed lane: green approval can send this draft through {connector['label']}."
     else:
@@ -1589,6 +1724,8 @@ def movement_for(item):
         "diversify_when_low": attention < BOT_SETTINGS["attention_low_threshold"],
         "diversity_targets": lane["diversify_targets"],
         "website_target": website_target,
+        "swarm_worker": swarm_worker,
+        "swarm_status": "public_owned_publish_ready" if provider == "owned_support_rd" else "connected_or_review_route",
         "focus_mode": FOCUS_MODE,
         "focus_rank": focus_rank(item),
         "focus_reason": focus_reason_for(item),
@@ -1635,16 +1772,31 @@ def expand_wave(force_unique=False):
     batch = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     prefix = f"manual-{batch}" if force_unique else f"daily-{cycle}"
     made = []
-    seeds = COMMENT_STORY_FAMILY_SEEDS if FOCUS_MODE == "comments_story_family" else EXPANSION_SEEDS
-    wave_name = "comment-story-family-focus" if FOCUS_MODE == "comments_story_family" else "daily-growth-expansion"
+    if SWARM_ENABLED:
+        seen = set()
+        seeds = []
+        for source in (COMMENT_STORY_FAMILY_SEEDS, EXPANSION_SEEDS):
+            for seed_item in source:
+                dedupe_key = f"{seed_item.get('category')}:{seed_item.get('title')}"
+                if dedupe_key in seen:
+                    continue
+                seen.add(dedupe_key)
+                seeds.append(seed_item)
+        wave_name = "safe-growth-swarm"
+    else:
+        seeds = COMMENT_STORY_FAMILY_SEEDS if FOCUS_MODE == "comments_story_family" else EXPANSION_SEEDS
+        wave_name = "comment-story-family-focus" if FOCUS_MODE == "comments_story_family" else "daily-growth-expansion"
     for index, item in enumerate(seeds, start=1):
         category = item.get("category") or "opportunity"
         title = item.get("title") or "SupportRD growth request"
+        worker = swarm_worker_for(item, placement_lane_for(item))
         wave_item = {
             **item,
             "key": f"{prefix}:{index}:{category}:{title}".lower().replace(" ", "-")[:150],
             "cycle": cycle,
             "wave": f"manual-{wave_name}" if force_unique else wave_name,
+            "swarm_worker_id": worker.get("id"),
+            "swarm_worker_name": worker.get("name"),
         }
         made.append(upsert_opportunity(wave_item))
     return made
@@ -1694,7 +1846,9 @@ def engine_tick():
         "expanded": len(expanded),
         "followups": len(followups),
         "queued": len([item for item in current if item.get("status") == "queued"]),
-        "note": "Backend outreach engine drafts intelligent follow-ups and waits for explicit owner approval before any action.",
+        "swarm_enabled": SWARM_ENABLED,
+        "swarm_workers": len(BOT_SWARM_WORKERS),
+        "note": "Backend outreach swarm drafts, routes, and publishes only to public SupportRD-owned surfaces or permitted connected channels.",
     })
     return current
 
@@ -1841,6 +1995,9 @@ def movements():
     report_rows = rows(request.args.get("status"))
     movement_rows = [movement_for(item) for item in report_rows]
     followups = followup_rows()
+    settings = settings_payload()
+    bot_swarm = swarm_payload(movement_rows)
+    settings["bot_swarm"] = bot_swarm
     return jsonify({
         "ok": True,
         "botVisible": False,
@@ -1852,9 +2009,10 @@ def movements():
         "movements": movement_rows[:80],
         "focusLive": focus_live_payload(movement_rows[:80]),
         "followups": followups[:40],
-        "settings": settings_payload(),
+        "settings": settings,
+        "botSwarm": bot_swarm,
         "connectedSubmissions": submission_rows(20),
-        "safety": "Auto-click path enabled. SupportRD-owned surfaces can publish internally; connected provider lanes can feed the approved API bridge; unconnected outside targets stay queued.",
+        "safety": "Auto-click path enabled. SupportRD-owned public surfaces can publish live SupportRD posts; connected provider lanes can feed the approved API bridge; unconnected outside targets stay queued.",
     })
 
 
@@ -1885,6 +2043,10 @@ def api_connect_submit():
 def report():
     require_admin()
     report_rows = rows()
+    movement_rows = [movement_for(item) for item in report_rows[:80]]
+    settings = settings_payload()
+    bot_swarm = swarm_payload(movement_rows)
+    settings["bot_swarm"] = bot_swarm
     cats = {}
     statuses = {}
     for item in report_rows:
@@ -1897,18 +2059,19 @@ def report():
         "runsConstantly": ENGINE_ENABLED,
         "intervalSeconds": ENGINE_INTERVAL_SECONDS,
         "agent_ref": BOT_AGENT_REF,
-        "settings": settings_payload(),
+        "settings": settings,
+        "botSwarm": bot_swarm,
         "summary": {
             "total": len(report_rows),
             "categories": cats,
             "statuses": statuses,
             "topScore": max([item.get("score", 0) for item in report_rows] or [0]),
         },
-        "movements": [movement_for(item) for item in report_rows[:80]],
-        "focusLive": focus_live_payload([movement_for(item) for item in report_rows[:80]]),
+        "movements": movement_rows,
+        "focusLive": focus_live_payload(movement_rows),
         "queued": [item for item in report_rows if item.get("status") == "queued"][:50],
         "approved": [item for item in report_rows if item.get("status") == "approved"][:50],
-        "safety": "Owned posts and connected API feeds can run through auto-click; outside websites/social accounts still require a permitted connected channel.",
+        "safety": "Public SupportRD-owned posts and connected API feeds can run through auto-click; outside websites/social accounts still require a permitted connected channel.",
     })
 
 

@@ -285,6 +285,7 @@
         outreachFocusLive: payload.focusLive || state.outreachFocusLive || null,
         outreachFollowups: Array.isArray(payload.followups) ? payload.followups.slice(0, 40) : state.outreachFollowups || [],
         outreachSettings: payload.settings || state.outreachSettings || null,
+        outreachBotSwarm: payload.botSwarm || payload.settings?.bot_swarm || state.outreachBotSwarm || null,
         outreachConnectedSubmissions: Array.isArray(payload.connectedSubmissions) ? payload.connectedSubmissions.slice(0, 20) : state.outreachConnectedSubmissions || [],
         outreachLiveTick: Number(state.outreachLiveTick || 0) + 1,
         outreachUpdatedAt: new Date().toISOString()
@@ -338,9 +339,13 @@
         outreachOwnedStatus: {
           posting_mode: payload.posting_mode || 'draft_only',
           owned_posting_enabled: !!payload.owned_posting_enabled,
-          auto_approval_scope: payload.auto_approval_scope || 'SupportRD-owned surfaces',
-          external_channel_status: payload.external_channel_status || ''
+          auto_approval_scope: payload.auto_approval_scope || 'SupportRD-owned public surfaces',
+          external_channel_status: payload.external_channel_status || '',
+          public_url: payload.public_url || 'https://supportrd.com/FAQ',
+          surface_label: payload.surface_label || 'SupportRD FAQ Lounge / Developer Feed',
+          visibility: payload.visibility || 'public_support_rd_owned_surface'
         },
+        outreachOwnedPublicUrl: payload.public_url || 'https://supportrd.com/FAQ',
         outreachOwnedUpdatedAt: new Date().toISOString()
       };
       write(next);
@@ -369,7 +374,7 @@
         headers: outreachAuthHeaders(true),
         body: JSON.stringify(payload)
       });
-      if ((res.status === 401 || res.status === 403) && saveOutreachOwnerToken('Publishing to SupportRD-owned surfaces needs your owner token.')) {
+      if ((res.status === 401 || res.status === 403) && saveOutreachOwnerToken('Publishing to SupportRD-owned public surfaces needs your owner token.')) {
         res = await fetch(`${OUTREACH_OWNED_POSTS_ENDPOINT}/publish`, {
           method:'POST',
           cache:'no-store',
@@ -384,8 +389,10 @@
           ok: !!data.ok,
           status: data.status || data.error || `http_${res.status}`,
           title: data.title || payload.title,
+          public_url: data.public_url || 'https://supportrd.com/FAQ',
           at: new Date().toISOString()
         },
+        outreachOwnedPublicUrl: data.public_url || read().outreachOwnedPublicUrl || 'https://supportrd.com/FAQ',
         outreachOwnedPosts: Array.isArray(data.posts) ? data.posts.slice(0,12) : (read().outreachOwnedPosts || [])
       };
       write(next);
@@ -438,7 +445,7 @@
       ...read(),
       outreachConnectSubmitResult: {
         ok:false,
-        status: isOwnedSupportRDSurface(site) ? 'publishing_owned_surface' : 'submitting_to_connected_api',
+        status: isOwnedSupportRDSurface(site) ? 'publishing_public_support_rd_surface' : 'submitting_to_permitted_connected_api',
         provider,
         title: active.title || 'SupportRD connected submission',
         at: new Date().toISOString()
@@ -451,9 +458,9 @@
         ...read(),
         outreachConnectSubmitResult: {
           ok: !!ownedResult?.ok,
-          status: ownedResult?.status || 'owned_publish_requested',
+          status: ownedResult?.status || 'public_support_rd_publish_requested',
           provider: 'owned_support_rd',
-          title: active.title || 'SupportRD owned post',
+          title: active.title || 'SupportRD public post',
           at: new Date().toISOString()
         }
       };
@@ -522,7 +529,7 @@
     if (!candidate) {
       writeAutoApproveStatus({
         ok:false,
-        status:'waiting_for_connected_ready_target',
+        status:'watching_for_permitted_channel',
         title:'Auto-click approval is watching',
         provider:'connect_api'
       });
@@ -532,7 +539,7 @@
     const info = connectedApprovalInfoFor(candidate);
     writeAutoApproveStatus({
       ok:false,
-      status:'auto_clicking_green_approval',
+      status: info.owned ? 'auto_clicking_public_support_rd_post' : 'auto_clicking_permitted_connected_channel',
       title: candidate.title || candidate.category || 'SupportRD movement',
       provider: info.provider,
       domain: info.site.domain || info.site.label || ''
@@ -1284,16 +1291,16 @@
           <div>
             <span>Current Website Target</span>
             <strong>${esc(current.label || current.domain || 'Target website')}</strong>
-            <p>${esc(currentOwned ? 'SupportRD-owned surface. The bot can work here in auto-owned mode; outside websites still stay review-ready.' : (current.randomized ? `Random found target. Search route: ${current.search_query || current.purpose || 'fresh website discovery'}` : (current.purpose || 'The bot is preparing a draft/review route for this website lane.')))}</p>
+            <p>${esc(currentOwned ? 'SupportRD-owned public surface. This creates crawlable proof content for ads, comments, emails, and pitches to point back to. Outside websites only run through permitted connected channels.' : (current.randomized ? `Random found target. Search route: ${current.search_query || current.purpose || 'fresh website discovery'}` : (current.purpose || 'The bot is preparing a draft/review route for this website lane.')))}</p>
             <code>${esc(current.public_url || current.tracking_url || 'https://supportrd.com')}</code>
           </div>
-          <a href="${esc(current.url || 'https://supportrd.com')}" target="_blank" rel="noopener">${currentOwned ? 'Open Owned Feed' : 'Open Website'}</a>
+          <a href="${esc(current.url || 'https://supportrd.com')}" target="_blank" rel="noopener">${currentOwned ? 'Open Public Feed' : 'Open Website'}</a>
         </div>
         <div class="sr-connect-submit-rail">
           <div>
-            <span>Connected API Approval</span>
+            <span>Permitted Auto-Click Approval</span>
             <strong>${esc(channel.connected || currentOwned ? 'Ready for owner-approved submit' : 'Connect API needed')}</strong>
-            <p>${esc(currentOwned ? 'This one is owned by SupportRD, so approving can publish internally.' : (channel.connected ? `This exact random target will hand off through ${channel.label || provider}.` : connectedMissingText(provider, channel)))}</p>
+            <p>${esc(currentOwned ? 'This one is owned by SupportRD, so approving can publish a public SupportRD post now.' : (channel.connected ? `This exact random target will hand off through permitted ${channel.label || provider}.` : connectedMissingText(provider, channel)))}</p>
             <small>${esc(provider)} · ${esc(channel.status || 'status pending')}</small>
           </div>
           <button type="button" data-connected-submit>${currentOwned ? 'Publish Owned' : 'Approve Through Connected API'}</button>
@@ -1301,7 +1308,7 @@
           <button type="button" data-connected-refresh>Refresh API</button>
           ${submitResult.status ? `<b class="${submitResult.ok ? 'ok' : 'warn'}">${esc(connectedResultText(submitResult, provider, channel))}</b>` : ''}
           <small class="sr-auto-approve-status">
-            ${esc(autoOn ? `Auto posts/feeds 1 ready target every ${Math.round(OUTREACH_AUTO_APPROVE_MS / 1000)}s` : 'Auto approval paused')}
+            ${esc(autoOn ? `Auto-clicks 1 permitted target every ${Math.round(OUTREACH_AUTO_APPROVE_MS / 1000)}s: SupportRD public post or connected API handoff` : 'Auto approval paused')}
             · ${esc(autoCount)} sent
             ${autoStatus.status ? ` · ${esc(autoStatus.status)}` : ''}
             ${autoLast.domain ? ` · ${esc(autoLast.domain)}` : ''}
@@ -1312,13 +1319,13 @@
             const owned = isOwnedSupportRDSurface(site);
             const rowProvider = connectedProviderForSite(site);
             const rowChannel = connectedChannelForProvider(rowProvider);
-            const status = owned ? 'owned surface live' : (site.status || item.status || 'queued');
-            const action = owned ? 'open owned feed' : 'review target';
+            const status = owned ? 'public owned surface live' : (site.status || item.status || 'queued');
+            const action = owned ? 'open public feed' : 'review target';
             return `
             <article class="${isActive ? 'active' : ''}">
               <span>${esc(site.lane || item.placement_lane || placementLaneFor(item).label)}</span>
               <strong>${esc(site.label || site.domain || 'Target website')}</strong>
-              <p>${esc(owned ? 'Internal SupportRD route for the live bot/owned feed.' : (site.randomized ? `Random found website candidate. ${site.purpose || ''}` : (site.purpose || item.target || 'Owner-review placement route')))}</p>
+              <p>${esc(owned ? 'Public SupportRD route that becomes proof content for outside traffic.' : (site.randomized ? `Random found website candidate. ${site.purpose || ''}` : (site.purpose || item.target || 'Owner-review placement route')))}</p>
               <div>
                 <b>${esc(site.domain || 'supportrd.com')}</b>
                 <em>${esc(site.randomized ? 'random found' : status)}</em>
@@ -1860,6 +1867,59 @@
     `;
   }
 
+  function renderBotSwarmPanel(state, active){
+    const settings = state.outreachSettings || {};
+    const swarm = state.outreachBotSwarm || settings.bot_swarm || {};
+    const workers = Array.isArray(swarm.workers) && swarm.workers.length ? swarm.workers : [];
+    const tick = Number(state.outreachLiveTick || 0);
+    const activeWorker = active.swarm_worker || workers[tick % Math.max(1, workers.length)] || {};
+    const ownedPolicy = swarm.public_owned_surface_policy || 'SupportRD-owned public pages are the proof hub the outside outreach points back to.';
+    const autoScope = swarm.auto_publish_scope || 'Auto-click publishes on SupportRD-owned public pages and submits only through permitted connected channels.';
+    const antiBan = swarm.anti_ban_policy || 'No account rotation, proxy tricks, speed hacks, fake engagement, or random-site autoposting.';
+    return `
+      <section class="sr-global-band sr-bot-swarm">
+        <div class="sr-bot-swarm-head">
+          <div>
+            <span>Safe Bot Swarm</span>
+            <strong>${esc(swarm.name || 'SupportRD Safe Growth Swarm')}</strong>
+            <p>${esc(swarm.strategy || 'Specialist lanes draft, route, and submit through safe public SupportRD pages or permitted outside connectors.')}</p>
+          </div>
+          <div class="sr-bot-swarm-active">
+            <span>Now Working</span>
+            <strong>${esc(activeWorker.name || 'Attention Router')}</strong>
+            <p>${esc(activeWorker.role || 'Chooses the strongest route and keeps weak attention lanes diverse.')}</p>
+            <b>${esc(activeWorker.active_movements || 0)} active moves</b>
+          </div>
+        </div>
+        <div class="sr-bot-swarm-grid">
+          ${workers.map(worker=>`
+            <article class="${worker.id === activeWorker.id ? 'active' : ''}">
+              <span>${esc(worker.lane || 'growth lane')}</span>
+              <strong>${esc(worker.name || 'Swarm worker')}</strong>
+              <p>${esc(worker.role || 'Builds a SupportRD growth route.')}</p>
+              <small>${esc(worker.cadence || 'safe cadence')}</small>
+              <b>${worker.can_auto_publish ? 'Auto on permitted lane' : 'Draft / connector only'}</b>
+            </article>
+          `).join('') || `
+            <article class="active">
+              <span>growth lane</span>
+              <strong>Attention Router</strong>
+              <p>Waiting for the backend swarm payload.</p>
+              <small>safe cadence</small>
+              <b>Draft / connector only</b>
+            </article>
+          `}
+        </div>
+        <div class="sr-bot-swarm-guardrails">
+          <b>Public SupportRD purpose: ${esc(ownedPolicy)}</b>
+          <b>Auto-click rule: ${esc(settings.auto_click_meaning || autoScope)}</b>
+          <b>Outside-site rule: only permitted connected APIs/forms/accounts can receive automatic handoff.</b>
+          <b>Account safety: ${esc(antiBan)}</b>
+        </div>
+      </section>
+    `;
+  }
+
   function renderOwnedPostingPanel(state, active){
     const settings = state.outreachSettings || {};
     const owned = state.outreachOwnedStatus || {};
@@ -1868,21 +1928,23 @@
     const posts = Array.isArray(state.outreachOwnedPosts) ? state.outreachOwnedPosts : [];
     const result = state.outreachOwnedPublishResult || {};
     const currentDraft = fullDraftFor(active);
+    const publicUrl = owned.public_url || state.outreachOwnedPublicUrl || result.public_url || 'https://supportrd.com/FAQ';
     return `
       <section class="sr-global-band sr-bot-owned-posting ${enabled ? 'live' : 'locked'}">
         <div class="sr-global-band-head">
-          <span>Owned Posting Mode</span>
-          <strong>${enabled ? 'SupportRD internal auto-approval is live' : 'SupportRD internal posting is locked'}</strong>
+          <span>Public Owned Publishing</span>
+          <strong>${enabled ? 'SupportRD public auto-approval is live' : 'SupportRD public posting is locked'}</strong>
         </div>
         <div class="sr-bot-owned-grid">
           <article>
             <span>Current Mode</span>
             <strong>${esc(mode)}</strong>
-            <p>${esc(owned.auto_approval_scope || settings.auto_approval_scope || 'SupportRD-owned/internal surfaces only')}</p>
+            <p>${esc(owned.auto_approval_scope || settings.auto_approval_scope || 'SupportRD-owned public surfaces only')}</p>
             <small>${esc(owned.external_channel_status || settings.permission_open_scope || 'Outside websites/social channels stay ready until a permitted connected channel exists.')}</small>
             <div class="sr-bot-owned-actions">
-              <button type="button" data-owned-publish>${enabled ? 'Publish Current Owned Post' : 'Test Publish Setup'}</button>
-              <button type="button" data-owned-refresh>Refresh Owned Feed</button>
+              <button type="button" data-owned-publish>${enabled ? 'Publish Current Public Post' : 'Test Publish Setup'}</button>
+              <button type="button" data-owned-refresh>Refresh Public Feed</button>
+              <a href="${esc(publicUrl)}" target="_blank" rel="noopener">Open Public Feed</a>
               <button type="button" data-owned-token>${outreachOwnerToken() ? 'Update Token' : 'Set Token'}</button>
             </div>
             ${result.status ? `<b class="sr-bot-owned-result ${result.ok ? 'ok' : 'bad'}">${esc(result.status)} · ${esc(result.title || '')}</b>` : ''}
@@ -1893,8 +1955,8 @@
             <pre>${esc(currentDraft.slice(0, 900))}</pre>
           </article>
           <article>
-            <span>Live SupportRD Feed</span>
-            <strong>${esc(posts.length)} recent owned posts</strong>
+            <span>Live Public SupportRD Feed</span>
+            <strong>${esc(posts.length)} recent public posts</strong>
             <div class="sr-bot-owned-list">
               ${posts.map(post=>`
                 <section>
@@ -1902,7 +1964,7 @@
                   <p>${esc(post.message || '')}</p>
                   <small>${esc(post.created_at || '')}</small>
                 </section>
-              `).join('') || '<section><b>No owned bot posts yet</b><p>When enabled, the bot can publish approved SupportRD updates into the FAQ/developer feed.</p></section>'}
+              `).join('') || '<section><b>No public bot posts yet</b><p>When enabled, the bot can publish approved SupportRD updates into the public FAQ/developer feed.</p></section>'}
             </div>
           </article>
         </div>
@@ -2086,7 +2148,7 @@
         label:'Owned posting',
         value:ownedPosting ? 'enabled' : 'off',
         status:ownedPosting ? 'ok' : 'blocked',
-        detail:ownedPosting ? 'SupportRD-owned/internal surfaces can receive approved posts.' : 'Even owned SupportRD surfaces are not auto-publishing right now.'
+        detail:ownedPosting ? 'SupportRD-owned public surfaces can receive approved public posts.' : 'Even owned SupportRD surfaces are not auto-publishing right now.'
       },
       {
         label:'Queued movement',
@@ -2105,7 +2167,7 @@
       : queued > 0 && draftOnly
         ? `I have ${queued} strong drafts ready, but I am still boxed into draft-only mode. I am preparing the routes, the words, and the tracking links, but nobody can click them until they are published, manually posted, or sent through a permitted channel.`
         : queued > 0
-          ? `I have ${queued} moves queued. My weak spot is not copy quality right now; it is distribution. Give me an owned surface or connected channel and I can turn these drafts into real tracked visits.`
+          ? `I have ${queued} moves queued. My weak spot is not copy quality right now; it is distribution. Give me a public SupportRD surface or permitted connected channel and I can turn these drafts into real tracked visits.`
           : 'I do not have enough fresh movements yet. Push a new wave, then I can build tracked routes and measure who comes back.';
     return `
       <section class="sr-global-band sr-visitor-diagnosis">
@@ -2130,10 +2192,10 @@
           <div>
             <span>What The Bot Is Doing Wrong</span>
             <strong>It is scoring and drafting, not creating real exposure.</strong>
-            <p>Attention Core 100 means the copy is relevant. It does not mean people saw it. Real visitors only happen after a tracked link is posted, shared, submitted, emailed with permission, or published on a SupportRD-owned surface.</p>
+            <p>Attention Core 100 means the copy is relevant. It does not mean people saw it. Real visitors only happen after a tracked link is posted, shared, submitted, emailed with permission, or published on a SupportRD-owned public surface.</p>
           </div>
           <ol>
-            <li>Publish the best owned drafts to SupportRD-owned surfaces first: FAQ Lounge, Growth Hub, hair-problems, and product help pages.</li>
+            <li>Publish the best owned drafts to SupportRD-owned public surfaces first: FAQ Lounge, Growth Hub, hair-problems, and product help pages.</li>
             <li>Use the tracking links already generated in each movement before posting anywhere manually.</li>
             <li>Connect one permitted external channel at a time instead of letting drafts pile up.</li>
             <li>Watch for <code>sr_bot=1</code> in Bot Returns; that is the first proof the bot brought somebody back.</li>
@@ -2236,6 +2298,10 @@
     return `
       <section class="sr-global-tracker sr-bot-console" data-panel="globaltracker" data-outreach-movements>
         ${renderTrafficPingPanel(state)}
+
+        ${renderBotSwarmPanel(state, active)}
+
+        ${renderOwnedPostingPanel(state, active)}
 
         ${renderWebsiteEntryBoard(state, active)}
 
@@ -2564,6 +2630,22 @@
       .sr-bot-preview-card p{color:rgba(247,251,255,.78);line-height:1.4}
       .sr-bot-preview-card a{display:inline-flex;margin-top:.45rem;color:#07101d;background:#61efff;border-radius:.65rem;padding:.45rem .7rem;font-weight:1000;text-decoration:none}
       .sr-bot-live-frame{width:100%;height:17rem;border:1px solid rgba(255,255,255,.12);border-radius:.8rem;background:#07101d}
+      .sr-bot-swarm{position:relative;overflow:hidden;border-color:rgba(154,254,143,.26);background:linear-gradient(135deg,rgba(5,13,25,.96),rgba(10,27,34,.9));box-shadow:0 24px 70px rgba(0,0,0,.26)}
+      .sr-bot-swarm:before{content:"";position:absolute;left:-20%;right:-20%;top:0;height:2px;background:linear-gradient(90deg,transparent,#9afe8f,#61efff,#ffd27a,transparent);animation:srBotRail 2.6s linear infinite}
+      .sr-bot-swarm-head{position:relative;z-index:1;display:grid;grid-template-columns:minmax(0,1fr) minmax(18rem,.42fr);gap:.85rem;align-items:stretch}
+      .sr-bot-swarm-head span,.sr-bot-swarm-grid span{display:block;color:#9afe8f;font-size:.7rem;font-weight:1000;text-transform:uppercase;letter-spacing:.08em}
+      .sr-bot-swarm-head strong{display:block;margin:.22rem 0;color:#fff;font-size:1.35rem;line-height:1.05}
+      .sr-bot-swarm-head p,.sr-bot-swarm-grid p{color:rgba(247,251,255,.74);line-height:1.36}
+      .sr-bot-swarm-active{padding:.78rem;border-radius:.82rem;border:1px solid rgba(154,254,143,.24);background:rgba(154,254,143,.08)}
+      .sr-bot-swarm-active b{display:inline-flex;margin-top:.45rem;padding:.38rem .55rem;border-radius:999px;background:#9afe8f;color:#07101d;font-size:.72rem}
+      .sr-bot-swarm-grid{position:relative;z-index:1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.5rem;margin-top:.75rem}
+      .sr-bot-swarm-grid article{min-height:9.6rem;padding:.68rem;border-radius:.78rem;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.045)}
+      .sr-bot-swarm-grid article.active{border-color:rgba(154,254,143,.44);background:linear-gradient(135deg,rgba(154,254,143,.15),rgba(97,239,255,.08));box-shadow:0 12px 28px rgba(0,0,0,.18)}
+      .sr-bot-swarm-grid strong{display:block;margin:.18rem 0;color:#fff;font-size:.95rem;line-height:1.06}
+      .sr-bot-swarm-grid small{display:block;margin:.35rem 0;color:#dffbff;font-size:.68rem;line-height:1.2}
+      .sr-bot-swarm-grid b{display:inline-flex;padding:.34rem .5rem;border-radius:999px;border:1px solid rgba(97,239,255,.2);background:rgba(97,239,255,.08);color:#dffbff;font-size:.64rem}
+      .sr-bot-swarm-guardrails{position:relative;z-index:1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.45rem;margin-top:.72rem}
+      .sr-bot-swarm-guardrails b{padding:.55rem .65rem;border-radius:.68rem;border:1px solid rgba(255,210,122,.18);background:rgba(255,210,122,.07);color:#ffefb3;font-size:.72rem;line-height:1.28}
       .sr-bot-owned-posting{position:relative;overflow:hidden;border-color:rgba(97,239,255,.22);background:linear-gradient(135deg,rgba(5,12,25,.96),rgba(9,24,33,.9))}
       .sr-bot-owned-posting.live{border-color:rgba(154,254,143,.34);box-shadow:0 0 0 1px rgba(154,254,143,.08),0 24px 70px rgba(0,0,0,.26)}
       .sr-bot-owned-posting:before{content:"";position:absolute;left:-20%;right:-20%;top:0;height:2px;background:linear-gradient(90deg,transparent,#61efff,#9afe8f,transparent);animation:srBotRail 2.4s linear infinite}
@@ -2574,7 +2656,7 @@
       .sr-bot-owned-grid p,.sr-bot-owned-grid small{color:rgba(247,251,255,.72);line-height:1.35}
       .sr-bot-owned-grid pre{max-height:17rem;overflow:auto;margin:.6rem 0 0;padding:.7rem;border-radius:.68rem;border:1px solid rgba(97,239,255,.16);background:rgba(0,0,0,.4);color:#dffbff;font:800 .78rem/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap}
       .sr-bot-owned-actions{display:flex;flex-wrap:wrap;gap:.45rem;margin:.7rem 0}
-      .sr-bot-owned-actions button{min-height:2.25rem;padding:.48rem .68rem;border-radius:.62rem;border:1px solid rgba(97,239,255,.22);background:rgba(97,239,255,.12);color:#dffbff;font-weight:1000;cursor:pointer}
+      .sr-bot-owned-actions button,.sr-bot-owned-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:2.25rem;padding:.48rem .68rem;border-radius:.62rem;border:1px solid rgba(97,239,255,.22);background:rgba(97,239,255,.12);color:#dffbff;font-weight:1000;cursor:pointer;text-decoration:none}
       .sr-bot-owned-actions button:first-child{background:#9afe8f;color:#07101d;border-color:#9afe8f}
       .sr-bot-owned-result{display:block;margin-top:.55rem;padding:.5rem .62rem;border-radius:.62rem;border:1px solid rgba(255,255,255,.12);font-size:.72rem;line-height:1.25}
       .sr-bot-owned-result.ok{color:#eaffdf;background:rgba(154,254,143,.12);border-color:rgba(154,254,143,.3)}
@@ -2597,7 +2679,7 @@
       .sr-connect-submit-rail>b.warn{color:#ffe4a6;background:rgba(255,210,122,.1);border-color:rgba(255,210,122,.26)}
       .sr-bot-queue .sr-global-grid{max-height:32rem;overflow:auto;padding-right:.15rem}
       .sr-bot-queue small{display:block;margin-top:.5rem;color:#9ff9ff;line-height:1.35}
-      @media(max-width:1120px){.sr-bot-live-grid,.sr-bot-owned-grid,.sr-bot-exec-main,.sr-bot-builder-grid,.sr-bot-placement,.sr-bot-attention-map,.sr-bot-diversify-board,.sr-bot-attention-detail-head,.sr-visitor-fix-route,.sr-traffic-head,.sr-traffic-grid,.sr-traffic-presentation,.sr-traffic-forecast,.sr-traffic-report,.sr-traffic-manual,.sr-bot-site-live,.sr-money-live-grid,.sr-connect-submit-rail{grid-template-columns:1fr}.sr-traffic-actions{justify-content:flex-start}.sr-bot-builder-head{display:grid}.sr-bot-builder-meter{justify-items:start}.sr-bot-orbit{margin:auto}.sr-bot-live-frame{height:22rem}.sr-bot-pipeline{grid-template-columns:repeat(2,minmax(0,1fr))}.sr-bot-phase-rail,.sr-bot-placement-grid,.sr-bot-attention-spokes,.sr-bot-diversify-targets,.sr-traffic-feed,.sr-bot-site-grid,.sr-bot-attention-route-grid,.sr-visitor-diagnosis-grid,.sr-money-live-routes{grid-template-columns:repeat(2,minmax(0,1fr))}.sr-traffic-windows{grid-template-columns:repeat(3,minmax(0,1fr))}.sr-traffic-report-chart{grid-template-columns:repeat(4,minmax(0,1fr))}}
+      @media(max-width:1120px){.sr-bot-live-grid,.sr-bot-owned-grid,.sr-bot-swarm-head,.sr-bot-exec-main,.sr-bot-builder-grid,.sr-bot-placement,.sr-bot-attention-map,.sr-bot-diversify-board,.sr-bot-attention-detail-head,.sr-visitor-fix-route,.sr-traffic-head,.sr-traffic-grid,.sr-traffic-presentation,.sr-traffic-forecast,.sr-traffic-report,.sr-traffic-manual,.sr-bot-site-live,.sr-money-live-grid,.sr-connect-submit-rail{grid-template-columns:1fr}.sr-traffic-actions{justify-content:flex-start}.sr-bot-builder-head{display:grid}.sr-bot-builder-meter{justify-items:start}.sr-bot-orbit{margin:auto}.sr-bot-live-frame{height:22rem}.sr-bot-pipeline{grid-template-columns:repeat(2,minmax(0,1fr))}.sr-bot-phase-rail,.sr-bot-placement-grid,.sr-bot-attention-spokes,.sr-bot-diversify-targets,.sr-traffic-feed,.sr-bot-site-grid,.sr-bot-attention-route-grid,.sr-visitor-diagnosis-grid,.sr-money-live-routes,.sr-bot-swarm-grid,.sr-bot-swarm-guardrails{grid-template-columns:repeat(2,minmax(0,1fr))}.sr-traffic-windows{grid-template-columns:repeat(3,minmax(0,1fr))}.sr-traffic-report-chart{grid-template-columns:repeat(4,minmax(0,1fr))}}
     `;
     document.head.appendChild(style);
   }

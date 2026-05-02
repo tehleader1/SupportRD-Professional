@@ -10155,9 +10155,12 @@ def outreach_owned_posts():
     return {
         "ok": True,
         "surface": "support_rd_faq_developer_feed",
+        "surface_label": "SupportRD FAQ Lounge / Developer Feed",
+        "public_url": "https://supportrd.com/FAQ",
+        "visibility": "public_support_rd_owned_surface",
         "posting_mode": SUPPORTRD_POSTING_MODE,
         "owned_posting_enabled": _support_rd_owned_posting_enabled(),
-        "auto_approval_scope": "SupportRD-owned/internal surfaces can post when posting mode is enabled; external lanes need a permitted connector.",
+        "auto_approval_scope": "SupportRD-owned public surfaces can post when posting mode is enabled; external lanes need a permitted connector.",
         "external_channel_status": "third_party_social_comment_email_requires_connected_permitted_channel",
         "posts": list_faq_developer_posts(limit=request.args.get("limit") or 12),
     }
@@ -10186,9 +10189,12 @@ def outreach_owned_posts_publish():
     return {
         "ok": bool(saved),
         "surface": surface,
+        "surface_label": "SupportRD FAQ Lounge / Developer Feed",
+        "public_url": "https://supportrd.com/FAQ",
+        "visibility": "public_support_rd_owned_surface",
         "title": title,
         "posting_mode": SUPPORTRD_POSTING_MODE,
-        "status": "published_owned_surface" if saved else "publish_failed",
+        "status": "published_public_owned_surface" if saved else "publish_failed",
         "posts": list_faq_developer_posts(limit=12),
     }, 200 if saved else 500
 
