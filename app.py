@@ -2028,6 +2028,18 @@ def init_local_remote_db():
             "created_at TEXT"
             ")"
         )
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS shopify_manual_session_reports ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "report_link TEXT,"
+            "report_query TEXT,"
+            "report_text TEXT,"
+            "parsed_json TEXT,"
+            "total_online_store_visitors INTEGER DEFAULT 0,"
+            "total_sessions INTEGER DEFAULT 0,"
+            "created_at TEXT"
+            ")"
+        )
         cur.execute("CREATE INDEX IF NOT EXISTS idx_shopify_traffic_created ON shopify_traffic_events(created_at)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_shopify_traffic_bot ON shopify_traffic_events(is_bot_return, created_at)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_bot_return_created ON bot_return_visits(created_at)")
@@ -2721,11 +2733,196 @@ def fetch_shopify_sessions_report(force=False):
         return payload
 
 
+def _decode_shopify_report_query(report_link="", report_text=""):
+    for value in (report_link, report_text):
+        text = str(value or "").strip()
+        if not text:
+            continue
+        try:
+            params = parse_qs(urlparse(text).query)
+            ql = (params.get("ql") or params.get("query") or [""])[0]
+            if ql:
+                return _clip_text(ql, 2000)
+        except:
+            pass
+        if "FROM sessions" in text and "SHOW" in text:
+            start = text.find("FROM sessions")
+            return _clip_text(text[start:], 2000)
+    return ""
+
+
+def _parse_manual_shopify_sessions(report_text):
+    text = str(report_text or "").strip()
+    if not text:
+        return []
+    try:
+        data = json.loads(text)
+        rows = data.get("series") or data.get("rows") or data.get("data") or []
+        parsed = []
+        for index, row in enumerate(rows):
+            if isinstance(row, dict):
+                label = row.get("label") or row.get("day") or row.get("date") or f"row {index + 1}"
+                visitors = _safe_float(row.get("online_store_visitors") or row.get("visitors"))
+                sessions = _safe_float(row.get("sessions"))
+                parsed.append({
+                    "label": _clip_text(label, 80),
+                    "online_store_visitors": int(round(visitors)),
+                    "sessions": int(round(sessions)),
+                })
+        if parsed:
+            return parsed[-14:]
+    except:
+        pass
+
+    jsonl_rows = []
+    for line in text.replace("\r", "\n").split("\n"):
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            row = json.loads(line)
+        except:
+            continue
+        if not isinstance(row, dict):
+            continue
+        label = row.get("day") or row.get("date") or row.get("label") or f"row {len(jsonl_rows) + 1}"
+        visitors = _safe_float(row.get("online_store_visitors") or row.get("visitors"))
+        sessions = _safe_float(row.get("sessions"))
+        item = {
+            "label": _clip_text(label, 80),
+            "online_store_visitors": int(round(visitors)),
+            "sessions": int(round(sessions)),
+        }
+        comparison_day = row.get("comparison_day__previous_period")
+        if comparison_day:
+            item["comparison_label"] = _clip_text(comparison_day, 80)
+            item["comparison_online_store_visitors"] = int(round(_safe_float(row.get("comparison_online_store_visitors__previous_period"))))
+            item["comparison_sessions"] = int(round(_safe_float(row.get("comparison_sessions__previous_period"))))
+            item["percent_change_online_store_visitors"] = round(_safe_float(row.get("percent_change_online_store_visitors__previous_period")), 2)
+            item["percent_change_sessions"] = round(_safe_float(row.get("percent_change_sessions__previous_period")), 2)
+        jsonl_rows.append(item)
+    if jsonl_rows:
+        return jsonl_rows[-14:]
+
+    parsed = []
+    for raw_line in text.replace("\r", "\n").split("\n"):
+        line = re.sub(r"\s+", " ", raw_line.strip())
+        if not line:
+            continue
+        lower = line.lower()
+        if "online_store_visitors" in lower or ("sessions" in lower and "visitor" in lower):
+            continue
+        numbers = re.findall(r"-?\d[\d,]*(?:\.\d+)?", line)
+        if len(numbers) < 2:
+            continue
+        visitors = int(round(_safe_float(numbers[-2])))
+        sessions = int(round(_safe_float(numbers[-1])))
+        value_index = line.rfind(numbers[-2])
+        label = line[:value_index].strip(" ,|\t-") if value_index >= 0 else ""
+        label = label or f"row {len(parsed) + 1}"
+        if "total" in label.lower():
+            continue
+        parsed.append({
+            "label": _clip_text(label, 80),
+            "online_store_visitors": visitors,
+            "sessions": sessions,
+        })
+    return parsed[-14:]
+
+
+def latest_manual_shopify_sessions_report():
+    try:
+        conn = sqlite3.connect(CREDIT_DB_PATH)
+        cur = conn.cursor()
+        row = cur.execute(
+            "SELECT report_link, report_query, parsed_json, total_online_store_visitors, total_sessions, created_at "
+            "FROM shopify_manual_session_reports ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        conn.close()
+        if not row:
+            return {
+                "ok": False,
+                "source": "shopify_manual_sessions",
+                "message": "Paste a copied Shopify Analytics table or report link to bridge sessions manually.",
+                "series": [],
+                "total_online_store_visitors": 0,
+                "total_sessions": 0,
+                "updated_at": "",
+            }
+        try:
+            series = json.loads(row[2] or "[]")
+        except:
+            series = []
+        return {
+            "ok": True,
+            "source": "shopify_manual_sessions",
+            "message": "Manual Shopify Analytics bridge is active.",
+            "report_link": row[0] or "",
+            "query": row[1] or "",
+            "series": series,
+            "total_online_store_visitors": int(row[3] or 0),
+            "total_sessions": int(row[4] or 0),
+            "updated_at": row[5] or "",
+        }
+    except:
+        return {
+            "ok": False,
+            "source": "shopify_manual_sessions",
+            "message": "Manual Shopify Analytics bridge is waiting for data.",
+            "series": [],
+            "total_online_store_visitors": 0,
+            "total_sessions": 0,
+            "updated_at": "",
+        }
+
+
+def save_manual_shopify_sessions_report(report_link="", report_text=""):
+    link = _clip_text(report_link, 1200)
+    text = _clip_text(report_text, 12000)
+    query = _decode_shopify_report_query(link, text) or SHOPIFY_SESSIONS_REPORT_QUERY
+    series = _parse_manual_shopify_sessions(text)
+    total_visitors = int(sum(item.get("online_store_visitors", 0) for item in series))
+    total_sessions = int(sum(item.get("sessions", 0) for item in series))
+    created_at = _local_remote_now()
+    try:
+        conn = sqlite3.connect(CREDIT_DB_PATH)
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO shopify_manual_session_reports "
+            "(report_link, report_query, report_text, parsed_json, total_online_store_visitors, total_sessions, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                link,
+                query,
+                text[:4000],
+                json.dumps(series, ensure_ascii=False),
+                total_visitors,
+                total_sessions,
+                created_at,
+            ),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        return {
+            "ok": False,
+            "source": "shopify_manual_sessions",
+            "message": "Could not save the manual Shopify Analytics bridge.",
+            "error": _clip_text(str(exc), 240),
+            "series": [],
+            "total_online_store_visitors": 0,
+            "total_sessions": 0,
+            "updated_at": created_at,
+        }
+    return latest_manual_shopify_sessions_report()
+
+
 def build_shopify_traffic_summary(include_sessions_report=True):
     windows = [1, 5, 15, 60, 1440]
     shopify_windows = [_summarize_shopify_window(minutes) for minutes in windows]
     local_windows = [summarize_local_remote_traffic(minutes) for minutes in windows]
     sessions_report = fetch_shopify_sessions_report() if include_sessions_report else None
+    manual_sessions_report = latest_manual_shopify_sessions_report()
     latest_bot_returns = []
     latest_events = []
     try:
@@ -2779,6 +2976,7 @@ def build_shopify_traffic_summary(include_sessions_report=True):
         "shopify": shopify_windows,
         "local": local_windows,
         "sessions_report": sessions_report,
+        "manual_sessions_report": manual_sessions_report,
         "latest_bot_returns": latest_bot_returns,
         "latest_events": latest_events,
         "first_bot_return_seen": bool(latest_bot_returns),
@@ -9224,6 +9422,20 @@ def shopify_traffic_summary():
 def shopify_traffic_sessions_report():
     force = str(request.args.get("force") or "").lower() in ("1", "true", "yes")
     return _shopify_traffic_json(fetch_shopify_sessions_report(force=force))
+
+
+@app.route("/api/shopify/traffic/manual-sessions", methods=["GET", "POST", "OPTIONS"])
+def shopify_traffic_manual_sessions():
+    if request.method == "OPTIONS":
+        return _shopify_traffic_json({"ok": True}, status=204)
+    if request.method == "GET":
+        return _shopify_traffic_json(latest_manual_shopify_sessions_report())
+    body = request.get_json(silent=True) or request.form.to_dict() or {}
+    report = save_manual_shopify_sessions_report(
+        report_link=body.get("report_link") or body.get("link") or "",
+        report_text=body.get("report_text") or body.get("text") or body.get("table") or "",
+    )
+    return _shopify_traffic_json(report)
 
 
 @app.route("/api/shopify/traffic/snippet")

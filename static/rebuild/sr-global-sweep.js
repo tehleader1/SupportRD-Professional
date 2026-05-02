@@ -14,6 +14,7 @@
   const TRAFFIC_ORIGIN = IS_LOCAL_PREVIEW ? LIVE_SUPPORT_RD_ORIGIN : '';
   const TRAFFIC_SUMMARY_ENDPOINT = `${TRAFFIC_ORIGIN}/api/shopify/traffic/summary`;
   const TRAFFIC_PIXEL_ENDPOINT = `${TRAFFIC_ORIGIN}/api/shopify/traffic/pixel`;
+  const TRAFFIC_MANUAL_SESSIONS_ENDPOINT = `${TRAFFIC_ORIGIN}/api/shopify/traffic/manual-sessions`;
   const TRAFFIC_PING_KEY = 'srTrafficPingEnabled';
   const TRAFFIC_CLIENT_KEY = 'srTrafficClientId';
   const TRAFFIC_LAST_ALERT_KEY = 'srTrafficLastAlertAt';
@@ -241,22 +242,25 @@
     return shopify.find(item=>Number(item.window_minutes) === 5) || local.find(item=>Number(item.window_minutes) === 5) || shopify[0] || local[0] || {};
   }
 
-  function renderShopifySessionsReport(report){
+  function renderShopifySessionsReport(report, manualReport){
     const data = report || {};
+    const manual = manualReport || {};
     const series = Array.isArray(data.series) ? data.series : [];
-    const peak = Math.max(1, ...series.map(item=>Math.max(Number(item.sessions || 0), Number(item.online_store_visitors || 0))));
+    const manualSeries = Array.isArray(manual.series) ? manual.series : [];
+    const activeSeries = series.length ? series : manualSeries;
+    const peak = Math.max(1, ...activeSeries.map(item=>Math.max(Number(item.sessions || 0), Number(item.online_store_visitors || 0))));
     const status = data.ok ? 'connected' : (data.configured ? 'needs scope' : 'needs token');
-    const query = data.query || 'FROM sessions SHOW online_store_visitors, sessions';
+    const query = data.query || manual.query || 'FROM sessions SHOW online_store_visitors, sessions';
     return `
       <div class="sr-traffic-report ${data.ok ? 'connected' : 'setup'}">
         <div class="sr-traffic-report-copy">
           <span>ShopifyQL Admin Sessions</span>
-          <strong>${data.ok ? 'Private sessions lane connected' : 'Sessions lane waiting'}</strong>
-          <p>${esc(data.message || 'Connect Shopify Admin reporting so this panel can read online_store_visitors and sessions directly from Shopify Analytics.')}</p>
-          <small>${esc(status)} · ${esc(data.store || 'supportdr-com.myshopify.com')} · ${esc(data.api_version || '2026-01')} · scope ${esc(data.required_scope || 'read_reports')}</small>
+          <strong>${data.ok ? 'Private sessions lane connected' : (manual.ok ? 'Manual sessions bridge active' : 'Sessions lane waiting')}</strong>
+          <p>${esc(data.ok ? data.message : (manual.ok ? manual.message : (data.message || 'Connect Shopify Admin reporting or paste copied Shopify Analytics rows.')))}</p>
+          <small>${esc(status)} · ${esc(data.store || 'supportdr-com.myshopify.com')} · ${esc(data.api_version || '2026-01')} · manual ${manual.ok ? 'saved' : 'empty'}</small>
         </div>
         <div class="sr-traffic-report-chart">
-          ${(series.length ? series : [{label:'waiting', sessions:0, online_store_visitors:0}]).slice(-7).map(item=>{
+          ${(activeSeries.length ? activeSeries : [{label:'waiting', sessions:0, online_store_visitors:0}]).slice(-7).map(item=>{
             const sessions = Number(item.sessions || 0);
             const visitors = Number(item.online_store_visitors || 0);
             return `<article>
@@ -270,6 +274,15 @@
           <summary>ShopifyQL query being tracked</summary>
           <pre>${esc(query)}</pre>
         </details>
+        <div class="sr-traffic-manual">
+          <div>
+            <span>Manual Shopify Bridge</span>
+            <strong>${manual.ok ? `${esc(manual.total_online_store_visitors || 0)} visitors · ${esc(manual.total_sessions || 0)} sessions` : 'Paste report link or copied rows'}</strong>
+          </div>
+          <input data-shopify-report-link type="url" placeholder="Shopify report URL" value="${esc(manual.report_link || '')}">
+          <textarea data-shopify-report-text placeholder="Paste copied Shopify table, CSV, or JSON rows"></textarea>
+          <button type="button" data-save-shopify-manual>Save Manual Sessions</button>
+        </div>
       </div>
     `;
   }
@@ -382,6 +395,29 @@
       maybeNotifyTrafficWave(payload);
       if (document.querySelector('[data-panel="globaltracker"]')) root.renderFunctionalPanel?.('globaltracker');
       return next;
+    } catch {
+      return null;
+    }
+  }
+
+  async function saveManualShopifySessions(){
+    const link = document.querySelector('[data-shopify-report-link]')?.value || '';
+    const text = document.querySelector('[data-shopify-report-text]')?.value || '';
+    try {
+      const res = await fetch(TRAFFIC_MANUAL_SESSIONS_ENDPOINT, {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json', 'Accept':'application/json' },
+        body: JSON.stringify({ report_link: link, report_text: text })
+      });
+      if (!res.ok) return null;
+      const manual = await res.json();
+      const state = read();
+      const trafficSummary = { ...(state.trafficSummary || {}), manual_sessions_report: manual };
+      write({ ...state, trafficSummary, trafficUpdatedAt: manual.updated_at || new Date().toISOString() });
+      trafficBeep(manual.ok ? 58 : 24);
+      if (document.querySelector('[data-panel="globaltracker"]')) root.renderFunctionalPanel?.('globaltracker');
+      refreshTrafficSummary(false);
+      return manual;
     } catch {
       return null;
     }
@@ -1179,6 +1215,7 @@
     const shopify = Array.isArray(summary.shopify) ? summary.shopify : [];
     const local = Array.isArray(summary.local) ? summary.local : [];
     const sessionsReport = summary.sessions_report || {};
+    const manualSessionsReport = summary.manual_sessions_report || {};
     const five = trafficFive(summary);
     const waveScore = Math.max(0, Math.min(100, Number(summary.wave_score || 0)));
     const enabled = trafficPingEnabled();
@@ -1253,7 +1290,7 @@
           </div>
         </div>
 
-        ${renderShopifySessionsReport(sessionsReport)}
+        ${renderShopifySessionsReport(sessionsReport, manualSessionsReport)}
 
         <details class="sr-traffic-code">
           <summary>Shopify traffic code</summary>
@@ -1457,6 +1494,12 @@
       .sr-traffic-report details{grid-column:1/-1;padding-top:.35rem}
       .sr-traffic-report summary{color:#dffbff;font-weight:1000;cursor:pointer}
       .sr-traffic-report pre{max-height:9rem;overflow:auto;margin:.45rem 0 0;padding:.65rem;border-radius:.62rem;border:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.45);color:#dffbff;font:800 .7rem/1.42 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap}
+      .sr-traffic-manual{grid-column:1/-1;display:grid;grid-template-columns:1fr 1.1fr 1.2fr auto;gap:.48rem;align-items:stretch;padding:.58rem;border-radius:.78rem;border:1px solid rgba(255,207,116,.18);background:rgba(255,207,116,.055)}
+      .sr-traffic-manual span{display:block;color:#ffcf74;font-size:.65rem;font-weight:1000;text-transform:uppercase}
+      .sr-traffic-manual strong{display:block;margin-top:.18rem;color:#fff;font-size:.82rem}
+      .sr-traffic-manual input,.sr-traffic-manual textarea{width:100%;min-height:2.6rem;padding:.58rem .65rem;border-radius:.62rem;border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.28);color:#f7fbff;font:800 .74rem/1.35 inherit;resize:vertical}
+      .sr-traffic-manual textarea{min-height:2.6rem;max-height:7rem}
+      .sr-traffic-manual button{min-height:2.6rem;padding:.55rem .8rem;border:0;border-radius:.62rem;background:linear-gradient(135deg,#61efff,#9afe8f);color:#07101d;font-weight:1000;cursor:pointer}
       .sr-traffic-windows{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:.42rem}
       .sr-traffic-windows article,.sr-traffic-paths{padding:.7rem;border-radius:.85rem;border:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.22)}
       .sr-traffic-windows span{display:block;color:#ffcf74;font-size:.68rem;font-weight:1000;text-transform:uppercase}
@@ -1615,7 +1658,7 @@
       .sr-bot-live-frame{width:100%;height:17rem;border:1px solid rgba(255,255,255,.12);border-radius:.8rem;background:#07101d}
       .sr-bot-queue .sr-global-grid{max-height:32rem;overflow:auto;padding-right:.15rem}
       .sr-bot-queue small{display:block;margin-top:.5rem;color:#9ff9ff;line-height:1.35}
-      @media(max-width:1120px){.sr-bot-live-grid,.sr-bot-exec-main,.sr-bot-builder-grid,.sr-bot-placement,.sr-bot-attention-map,.sr-bot-diversify-board,.sr-traffic-head,.sr-traffic-grid,.sr-traffic-presentation,.sr-traffic-report,.sr-bot-site-live{grid-template-columns:1fr}.sr-traffic-actions{justify-content:flex-start}.sr-bot-builder-head{display:grid}.sr-bot-builder-meter{justify-items:start}.sr-bot-orbit{margin:auto}.sr-bot-live-frame{height:22rem}.sr-bot-pipeline{grid-template-columns:repeat(2,minmax(0,1fr))}.sr-bot-phase-rail,.sr-bot-placement-grid,.sr-bot-attention-spokes,.sr-bot-diversify-targets,.sr-traffic-feed,.sr-bot-site-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.sr-traffic-windows{grid-template-columns:repeat(3,minmax(0,1fr))}.sr-traffic-report-chart{grid-template-columns:repeat(4,minmax(0,1fr))}}
+      @media(max-width:1120px){.sr-bot-live-grid,.sr-bot-exec-main,.sr-bot-builder-grid,.sr-bot-placement,.sr-bot-attention-map,.sr-bot-diversify-board,.sr-traffic-head,.sr-traffic-grid,.sr-traffic-presentation,.sr-traffic-report,.sr-traffic-manual,.sr-bot-site-live{grid-template-columns:1fr}.sr-traffic-actions{justify-content:flex-start}.sr-bot-builder-head{display:grid}.sr-bot-builder-meter{justify-items:start}.sr-bot-orbit{margin:auto}.sr-bot-live-frame{height:22rem}.sr-bot-pipeline{grid-template-columns:repeat(2,minmax(0,1fr))}.sr-bot-phase-rail,.sr-bot-placement-grid,.sr-bot-attention-spokes,.sr-bot-diversify-targets,.sr-traffic-feed,.sr-bot-site-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.sr-traffic-windows{grid-template-columns:repeat(3,minmax(0,1fr))}.sr-traffic-report-chart{grid-template-columns:repeat(4,minmax(0,1fr))}}
     `;
     document.head.appendChild(style);
   }
@@ -1648,6 +1691,10 @@
       if (event.target.closest('[data-traffic-refresh]')) {
         event.preventDefault();
         refreshTrafficSummary(false);
+      }
+      if (event.target.closest('[data-save-shopify-manual]')) {
+        event.preventDefault();
+        saveManualShopifySessions();
       }
       if (event.target.closest('[data-copy-shopify-pixel]')) {
         event.preventDefault();
