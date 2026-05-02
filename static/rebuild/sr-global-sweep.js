@@ -2015,6 +2015,16 @@
             <p>${arrival.engaged_sessions ? `${esc(arrival.engaged_sessions)} non-bounced sessions using ${esc(arrival.bounce_rate_percent)}% bounce rate.` : 'Bounce rate lets the tracker estimate when a visitor is actually staying.'}</p>
           </article>
           <article>
+            <span>Product Interest Timing</span>
+            <strong>${arrival.product_interest_count ? `about every ${esc(formatTrafficInterval(arrival.product_interest_interval_minutes))}` : 'needs product interest'}</strong>
+            <p>${arrival.product_interest_count ? `${esc(arrival.product_interest_count)} product-interest signals in this Shopify window.` : 'Product interest tells the bot when people are inspecting products before cart.'}</p>
+          </article>
+          <article>
+            <span>Cart Intent Timing</span>
+            <strong>${arrival.expected_add_to_carts ? `about every ${esc(formatTrafficInterval(Number(arrival.add_to_cart_interval_hours || 0) * 60))}` : 'needs cart rate'}</strong>
+            <p>${arrival.expected_add_to_carts ? `${esc(arrival.expected_add_to_carts)} expected add-to-cart signals at ${esc(arrival.added_to_cart_rate_percent)}%.` : 'Added-to-cart rate catches serious product intent before checkout.'}</p>
+          </article>
+          <article>
             <span>Buyer Timing</span>
             <strong>${arrival.expected_conversions ? `about every ${esc(formatTrafficInterval(Number(arrival.conversion_interval_hours || 0) * 60))}` : 'needs conversion rate'}</strong>
             <p>${arrival.expected_conversions ? `${esc(arrival.expected_conversions)} expected buyers/orders at ${esc(arrival.conversion_rate_percent)}% conversion.` : 'Conversion rate turns visitors into a rough customer/order clock.'}</p>
@@ -2323,7 +2333,7 @@
       .sr-traffic-card strong{display:block;margin:.3rem 0;color:#fff;font-size:1.32rem}
       .sr-traffic-card p{color:rgba(247,251,255,.72);line-height:1.34}
       .sr-traffic-presentation{display:grid;grid-template-columns:1.2fr .9fr .9fr;gap:.65rem;margin-top:.75rem}
-      .sr-traffic-forecast{display:grid;grid-template-columns:1.15fr .9fr .9fr .9fr;gap:.65rem;margin-top:.75rem}
+      .sr-traffic-forecast{display:grid;grid-template-columns:1.2fr repeat(5,minmax(0,.82fr));gap:.65rem;margin-top:.75rem}
       .sr-traffic-forecast article{min-height:7.7rem;padding:.78rem;border-radius:.9rem;border:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.22)}
       .sr-traffic-forecast article.hero{border-color:rgba(154,254,143,.28);background:linear-gradient(135deg,rgba(154,254,143,.12),rgba(97,239,255,.07))}
       .sr-traffic-forecast span{display:block;color:#9afe8f;font-size:.68rem;font-weight:1000;text-transform:uppercase}

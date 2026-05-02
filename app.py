@@ -3005,14 +3005,40 @@ def _parse_shopify_summary_metrics(report_text):
     compact = re.sub(r"\s+", " ", text)
     metrics = {}
 
+    def _labeled_percent(labels):
+        for label in labels:
+            found = re.search(
+                rf"{label}\s*[:=\-]?\s*(-?(?:\d[\d,]*(?:\.\d+)?|\.\d+))\s*%",
+                compact,
+                re.IGNORECASE,
+            )
+            if found:
+                return _safe_float(found.group(1))
+        return 0
+
+    labeled_conversion = _labeled_percent([r"conversion rate", r"converted sessions?"])
+    labeled_bounce = _labeled_percent([r"bounce rate"])
+    labeled_cart = _labeled_percent([r"added to cart rate", r"add to cart rate", r"cart rate"])
+    if labeled_conversion:
+        metrics["conversion_rate_percent"] = labeled_conversion
+    if labeled_bounce:
+        metrics["bounce_rate_percent"] = labeled_bounce
+    if labeled_cart:
+        metrics["added_to_cart_rate_percent"] = labeled_cart
+
     percent_values = [
         _safe_float(value)
-        for value in re.findall(r"(-?\d[\d,]*(?:\.\d+)?)\s*%", compact)
+        for value in re.findall(r"(-?(?:\d[\d,]*(?:\.\d+)?|\.\d+))\s*%", compact)
     ]
-    if percent_values:
+    lower_compact = compact.lower()
+    if percent_values and "conversion_rate_percent" not in metrics and (
+        "conversion rate" in lower_compact or "add" not in lower_compact
+    ):
         metrics["conversion_rate_percent"] = percent_values[0]
-    if len(percent_values) > 1:
+    if len(percent_values) > 1 and "bounce_rate_percent" not in metrics:
         metrics["bounce_rate_percent"] = percent_values[1]
+    if len(percent_values) > 2 and "added_to_cart_rate_percent" not in metrics and "cart" in lower_compact:
+        metrics["added_to_cart_rate_percent"] = percent_values[2]
 
     duration_match = re.search(
         r"(\d[\d,]*(?:\.\d+)?)\s*(?:seconds?|secs?|sec)\b",
@@ -3037,8 +3063,16 @@ def _parse_shopify_summary_metrics(report_text):
     if visitor_match:
         metrics["total_online_store_visitors"] = int(round(_safe_float(visitor_match.group(1))))
 
+    product_interest_match = re.search(
+        r"\bproduct interest(?: metric)?\b\s*[:=\-]?\s*(\d[\d,]*)\b",
+        compact,
+        re.IGNORECASE,
+    )
+    if product_interest_match:
+        metrics["product_interest_count"] = int(round(_safe_float(product_interest_match.group(1))))
+
     if (
-        ("online store visitor" in compact.lower() or "conversion rate" in compact.lower())
+        ("online store visitor" in lower_compact or "conversion rate" in lower_compact)
         and ("total_sessions" not in metrics or "total_online_store_visitors" not in metrics)
     ):
         plain_numbers = []
@@ -3055,8 +3089,10 @@ def _parse_shopify_summary_metrics(report_text):
             if 0 < number < 10000000:
                 plain_numbers.append(number)
         if len(plain_numbers) >= 2:
-            metrics.setdefault("total_sessions", plain_numbers[-2])
-            metrics.setdefault("total_online_store_visitors", plain_numbers[-1])
+            metrics.setdefault("total_sessions", plain_numbers[0])
+            metrics.setdefault("total_online_store_visitors", plain_numbers[1])
+        if "product interest" in lower_compact and len(plain_numbers) >= 3:
+            metrics["product_interest_count"] = plain_numbers[-1]
 
     return metrics
 
@@ -3094,9 +3130,12 @@ def build_shopify_arrival_estimate(total_visitors=0, total_sessions=0, metrics=N
     total_hours = total_minutes / 60
     conversion_rate = _safe_float(metrics.get("conversion_rate_percent"))
     bounce_rate = _safe_float(metrics.get("bounce_rate_percent"))
+    cart_rate = _safe_float(metrics.get("added_to_cart_rate_percent"))
     average_duration = _safe_float(metrics.get("average_session_duration_seconds"))
 
     expected_conversions = sessions * (conversion_rate / 100) if conversion_rate else 0
+    expected_add_to_carts = sessions * (cart_rate / 100) if cart_rate else 0
+    product_interest_count = int(metrics.get("product_interest_count") or 0)
     engaged_sessions = sessions * max(0, 1 - (bounce_rate / 100)) if bounce_rate else 0
     active_session_seconds = sessions * average_duration if average_duration else 0
     average_active_sessions = active_session_seconds / (total_minutes * 60) if active_session_seconds else 0
@@ -3105,6 +3144,8 @@ def build_shopify_arrival_estimate(total_visitors=0, total_sessions=0, metrics=N
     session_interval = total_minutes / sessions if sessions else 0
     engaged_interval = total_minutes / engaged_sessions if engaged_sessions else 0
     conversion_interval = total_hours / expected_conversions if expected_conversions else 0
+    add_to_cart_interval = total_hours / expected_add_to_carts if expected_add_to_carts else 0
+    product_interest_interval = total_minutes / product_interest_count if product_interest_count else 0
 
     return {
         "ok": bool(visitors or sessions),
@@ -3119,6 +3160,11 @@ def build_shopify_arrival_estimate(total_visitors=0, total_sessions=0, metrics=N
         "conversion_rate_percent": round(conversion_rate, 4) if conversion_rate else 0,
         "expected_conversions": round(expected_conversions, 2) if expected_conversions else 0,
         "conversion_interval_hours": round(conversion_interval, 2) if conversion_interval else 0,
+        "added_to_cart_rate_percent": round(cart_rate, 4) if cart_rate else 0,
+        "expected_add_to_carts": round(expected_add_to_carts, 2) if expected_add_to_carts else 0,
+        "add_to_cart_interval_hours": round(add_to_cart_interval, 2) if add_to_cart_interval else 0,
+        "product_interest_count": product_interest_count,
+        "product_interest_interval_minutes": round(product_interest_interval, 2) if product_interest_interval else 0,
         "bounce_rate_percent": round(bounce_rate, 2) if bounce_rate else 0,
         "engaged_sessions": int(round(engaged_sessions)) if engaged_sessions else 0,
         "engaged_interval_minutes": round(engaged_interval, 2) if engaged_interval else 0,
