@@ -241,6 +241,39 @@
     return shopify.find(item=>Number(item.window_minutes) === 5) || local.find(item=>Number(item.window_minutes) === 5) || shopify[0] || local[0] || {};
   }
 
+  function renderShopifySessionsReport(report){
+    const data = report || {};
+    const series = Array.isArray(data.series) ? data.series : [];
+    const peak = Math.max(1, ...series.map(item=>Math.max(Number(item.sessions || 0), Number(item.online_store_visitors || 0))));
+    const status = data.ok ? 'connected' : (data.configured ? 'needs scope' : 'needs token');
+    const query = data.query || 'FROM sessions SHOW online_store_visitors, sessions';
+    return `
+      <div class="sr-traffic-report ${data.ok ? 'connected' : 'setup'}">
+        <div class="sr-traffic-report-copy">
+          <span>ShopifyQL Admin Sessions</span>
+          <strong>${data.ok ? 'Private sessions lane connected' : 'Sessions lane waiting'}</strong>
+          <p>${esc(data.message || 'Connect Shopify Admin reporting so this panel can read online_store_visitors and sessions directly from Shopify Analytics.')}</p>
+          <small>${esc(status)} · ${esc(data.store || 'supportdr-com.myshopify.com')} · ${esc(data.api_version || '2026-01')} · scope ${esc(data.required_scope || 'read_reports')}</small>
+        </div>
+        <div class="sr-traffic-report-chart">
+          ${(series.length ? series : [{label:'waiting', sessions:0, online_store_visitors:0}]).slice(-7).map(item=>{
+            const sessions = Number(item.sessions || 0);
+            const visitors = Number(item.online_store_visitors || 0);
+            return `<article>
+              <b>${esc(item.label || 'day')}</b>
+              <div><i style="height:${Math.max(4, (sessions / peak) * 100)}%"></i><em style="height:${Math.max(4, (visitors / peak) * 100)}%"></em></div>
+              <small>${esc(visitors)} visitors · ${esc(sessions)} sessions</small>
+            </article>`;
+          }).join('')}
+        </div>
+        <details>
+          <summary>ShopifyQL query being tracked</summary>
+          <pre>${esc(query)}</pre>
+        </details>
+      </div>
+    `;
+  }
+
   function trafficBeep(score){
     try {
       const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -1145,10 +1178,16 @@
     const summary = state.trafficSummary || {};
     const shopify = Array.isArray(summary.shopify) ? summary.shopify : [];
     const local = Array.isArray(summary.local) ? summary.local : [];
+    const sessionsReport = summary.sessions_report || {};
     const five = trafficFive(summary);
     const waveScore = Math.max(0, Math.min(100, Number(summary.wave_score || 0)));
     const enabled = trafficPingEnabled();
     const pulse = Math.max(0.18, 1.32 - (waveScore / 100) * 1.02).toFixed(2);
+    const reportSessions = Number(sessionsReport.total_sessions || 0);
+    const reportVisitors = Number(sessionsReport.total_online_store_visitors || 0);
+    const reportHeadline = sessionsReport.configured
+      ? (sessionsReport.ok ? `${reportVisitors || reportSessions} visitors` : 'Scope check')
+      : 'Admin token';
     const botReturns = Array.isArray(summary.latest_bot_returns) ? summary.latest_bot_returns : [];
     const latestEvents = Array.isArray(summary.latest_events) ? summary.latest_events : [];
     const topPaths = Array.isArray(five.top_paths) && five.top_paths.length
@@ -1190,6 +1229,11 @@
             <strong>${shopify.reduce((sum,item)=>sum + Number(item.events || 0), 0)} events</strong>
             <p>${esc(summary.install_hint || 'Install the custom pixel in Shopify Customer Events.')}</p>
           </article>
+          <article class="sr-traffic-card">
+            <span>Shopify Sessions Report</span>
+            <strong>${esc(reportHeadline)}</strong>
+            <p>${sessionsReport.ok ? `${esc(reportSessions)} sessions from private Shopify Analytics.` : esc(sessionsReport.message || 'Needs Shopify Admin API read_reports access.')}</p>
+          </article>
         </div>
 
         <div class="sr-traffic-presentation">
@@ -1208,6 +1252,8 @@
             ${botReturns.slice(0,5).map(item=>`<b>${esc(item.campaign || item.source || 'bot source')} <em>${esc(item.path || '/')}</em></b>`).join('') || '<b>Waiting for first bot visitor <em>armed</em></b>'}
           </div>
         </div>
+
+        ${renderShopifySessionsReport(sessionsReport)}
 
         <details class="sr-traffic-code">
           <summary>Shopify traffic code</summary>
@@ -1387,13 +1433,30 @@
       @keyframes srTrafficBang{0%,100%{transform:scale(.92);box-shadow:0 0 0 0 rgba(255,77,92,.42),0 0 30px rgba(255,77,92,.22)}50%{transform:scale(1.08);box-shadow:0 0 0 .72rem rgba(255,77,92,0),0 0 62px rgba(255,210,122,.38)}}
       .sr-traffic-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:.45rem}
       .sr-traffic-actions button{min-height:2.35rem;padding:.55rem .75rem;border-radius:.7rem;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.07);color:#f7fbff;font-weight:1000;cursor:pointer}
-      .sr-traffic-grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:.65rem;margin-top:.85rem}
+      .sr-traffic-grid{display:grid;grid-template-columns:1.15fr 1fr 1fr 1fr;gap:.65rem;margin-top:.85rem}
       .sr-traffic-card{min-height:7.6rem;padding:.78rem;border-radius:.9rem;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.045)}
       .sr-traffic-card.hero{background:linear-gradient(135deg,rgba(97,239,255,.13),rgba(154,254,143,.08));border-color:rgba(97,239,255,.22)}
       .sr-traffic-card span,.sr-traffic-paths span{display:block;color:#61efff;font-size:.68rem;font-weight:1000;text-transform:uppercase}
       .sr-traffic-card strong{display:block;margin:.3rem 0;color:#fff;font-size:1.32rem}
       .sr-traffic-card p{color:rgba(247,251,255,.72);line-height:1.34}
       .sr-traffic-presentation{display:grid;grid-template-columns:1.2fr .9fr .9fr;gap:.65rem;margin-top:.75rem}
+      .sr-traffic-report{display:grid;grid-template-columns:minmax(16rem,.95fr) minmax(18rem,1.45fr);gap:.7rem;margin-top:.75rem;padding:.78rem;border-radius:.9rem;border:1px solid rgba(255,255,255,.1);background:linear-gradient(135deg,rgba(97,239,255,.075),rgba(255,255,255,.035))}
+      .sr-traffic-report.connected{border-color:rgba(154,254,143,.32);box-shadow:0 0 26px rgba(154,254,143,.08)}
+      .sr-traffic-report-copy span{display:block;color:#61efff;font-size:.68rem;font-weight:1000;text-transform:uppercase}
+      .sr-traffic-report-copy strong{display:block;margin:.2rem 0;color:#fff;font-size:1.1rem}
+      .sr-traffic-report-copy p{color:rgba(247,251,255,.72);line-height:1.34}
+      .sr-traffic-report-copy small{display:block;margin-top:.45rem;color:#ffcf74;font-weight:900}
+      .sr-traffic-report-chart{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:.42rem;align-items:end;min-height:9rem}
+      .sr-traffic-report-chart article{display:grid;align-content:end;gap:.3rem;min-height:8.8rem;padding:.45rem;border-radius:.65rem;background:rgba(0,0,0,.22);overflow:hidden}
+      .sr-traffic-report-chart b{color:#dffbff;font-size:.62rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .sr-traffic-report-chart div{display:flex;align-items:end;gap:.18rem;height:4.8rem}
+      .sr-traffic-report-chart i,.sr-traffic-report-chart em{display:block;flex:1;border-radius:.45rem .45rem .18rem .18rem;min-height:.3rem}
+      .sr-traffic-report-chart i{background:linear-gradient(180deg,#61efff,#4d7cff)}
+      .sr-traffic-report-chart em{background:linear-gradient(180deg,#9afe8f,#28c76f)}
+      .sr-traffic-report-chart small{color:rgba(247,251,255,.68);font-size:.62rem;line-height:1.2}
+      .sr-traffic-report details{grid-column:1/-1;padding-top:.35rem}
+      .sr-traffic-report summary{color:#dffbff;font-weight:1000;cursor:pointer}
+      .sr-traffic-report pre{max-height:9rem;overflow:auto;margin:.45rem 0 0;padding:.65rem;border-radius:.62rem;border:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.45);color:#dffbff;font:800 .7rem/1.42 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap}
       .sr-traffic-windows{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:.42rem}
       .sr-traffic-windows article,.sr-traffic-paths{padding:.7rem;border-radius:.85rem;border:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.22)}
       .sr-traffic-windows span{display:block;color:#ffcf74;font-size:.68rem;font-weight:1000;text-transform:uppercase}
@@ -1552,7 +1615,7 @@
       .sr-bot-live-frame{width:100%;height:17rem;border:1px solid rgba(255,255,255,.12);border-radius:.8rem;background:#07101d}
       .sr-bot-queue .sr-global-grid{max-height:32rem;overflow:auto;padding-right:.15rem}
       .sr-bot-queue small{display:block;margin-top:.5rem;color:#9ff9ff;line-height:1.35}
-      @media(max-width:1120px){.sr-bot-live-grid,.sr-bot-exec-main,.sr-bot-builder-grid,.sr-bot-placement,.sr-bot-attention-map,.sr-bot-diversify-board,.sr-traffic-head,.sr-traffic-grid,.sr-traffic-presentation,.sr-bot-site-live{grid-template-columns:1fr}.sr-traffic-actions{justify-content:flex-start}.sr-bot-builder-head{display:grid}.sr-bot-builder-meter{justify-items:start}.sr-bot-orbit{margin:auto}.sr-bot-live-frame{height:22rem}.sr-bot-pipeline{grid-template-columns:repeat(2,minmax(0,1fr))}.sr-bot-phase-rail,.sr-bot-placement-grid,.sr-bot-attention-spokes,.sr-bot-diversify-targets,.sr-traffic-feed,.sr-bot-site-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.sr-traffic-windows{grid-template-columns:repeat(3,minmax(0,1fr))}}
+      @media(max-width:1120px){.sr-bot-live-grid,.sr-bot-exec-main,.sr-bot-builder-grid,.sr-bot-placement,.sr-bot-attention-map,.sr-bot-diversify-board,.sr-traffic-head,.sr-traffic-grid,.sr-traffic-presentation,.sr-traffic-report,.sr-bot-site-live{grid-template-columns:1fr}.sr-traffic-actions{justify-content:flex-start}.sr-bot-builder-head{display:grid}.sr-bot-builder-meter{justify-items:start}.sr-bot-orbit{margin:auto}.sr-bot-live-frame{height:22rem}.sr-bot-pipeline{grid-template-columns:repeat(2,minmax(0,1fr))}.sr-bot-phase-rail,.sr-bot-placement-grid,.sr-bot-attention-spokes,.sr-bot-diversify-targets,.sr-traffic-feed,.sr-bot-site-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.sr-traffic-windows{grid-template-columns:repeat(3,minmax(0,1fr))}.sr-traffic-report-chart{grid-template-columns:repeat(4,minmax(0,1fr))}}
     `;
     document.head.appendChild(style);
   }

@@ -62,6 +62,7 @@ def aria_openai_enabled():
 SHOPIFY_STORE = os.environ.get("SHOPIFY_STORE", "")
 SHOPIFY_TOKEN = os.environ.get("SHOPIFY_STOREFRONT_TOKEN", "")
 SHOPIFY_ADMIN_TOKEN = os.environ.get("SHOPIFY_ADMIN_TOKEN", "")
+SHOPIFY_ADMIN_API_VERSION = os.environ.get("SHOPIFY_ADMIN_API_VERSION", "2026-01")
 SHOPIFY_BLOG_ID = os.environ.get("SHOPIFY_BLOG_ID", "")
 SHOPIFY_WEBHOOK_SECRET = os.environ.get("SHOPIFY_WEBHOOK_SECRET", "")
 SHOPIFY_PLAN_VARIANT_MAP_JSON = os.environ.get("SHOPIFY_PLAN_VARIANT_MAP_JSON", "")
@@ -2248,6 +2249,18 @@ SHOPIFY_TRAFFIC_EVENT_NAMES = [
     "checkout_completed",
 ]
 
+SHOPIFY_SESSIONS_REPORT_QUERY = """FROM sessions
+SHOW online_store_visitors, sessions
+WHERE human_or_bot_session IN ('human', 'bot')
+SINCE startOfDay(-7d) UNTIL today
+TIMESERIES day
+COMPARE TO previous_period
+ORDER BY day ASC
+LIMIT 1000
+WITH TOTALS, PERCENT_CHANGE"""
+SHOPIFY_SESSIONS_REPORT_CACHE_SECONDS = int(os.environ.get("SHOPIFY_SESSIONS_REPORT_CACHE_SECONDS", "120"))
+SHOPIFY_SESSIONS_REPORT_CACHE = {"at": 0, "payload": None}
+
 BOT_RETURN_MARKERS = [
     "sr_bot",
     "supportrd_bot",
@@ -2264,6 +2277,25 @@ BOT_RETURN_MARKERS = [
 
 def _clip_text(value, limit=240):
     return str(value or "").strip()[:limit]
+
+
+def _safe_float(value):
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, dict):
+        for key in ("amount", "value", "number", "current"):
+            if key in value:
+                return _safe_float(value.get(key))
+        return 0.0
+    cleaned = re.sub(r"[^0-9.\-]", "", str(value))
+    if cleaned in ("", "-", ".", "-."):
+        return 0.0
+    try:
+        return float(cleaned)
+    except:
+        return 0.0
 
 
 def _query_params_from_url(url):
@@ -2508,10 +2540,181 @@ def _summarize_shopify_window(window_minutes=5):
         }
 
 
-def build_shopify_traffic_summary():
+def _normalize_shopifyql_rows(columns, rows):
+    column_keys = []
+    for index, column in enumerate(columns or []):
+        if isinstance(column, dict):
+            key = column.get("name") or column.get("displayName") or f"column_{index + 1}"
+        else:
+            key = str(column or f"column_{index + 1}")
+        key = re.sub(r"[^a-z0-9_]+", "_", key.strip().lower()).strip("_") or f"column_{index + 1}"
+        column_keys.append(key)
+
+    normalized = []
+    for row in rows or []:
+        if isinstance(row, dict):
+            normalized.append(row)
+            continue
+        if isinstance(row, (list, tuple)):
+            item = {}
+            for index, value in enumerate(row):
+                key = column_keys[index] if index < len(column_keys) else f"column_{index + 1}"
+                item[key] = value
+            normalized.append(item)
+            continue
+        normalized.append({"value": row})
+    return normalized
+
+
+def _shopify_sessions_report_empty(message, configured=False, error="", status="needs_setup"):
+    return {
+        "ok": False,
+        "configured": bool(configured),
+        "source": "shopifyql_sessions_report",
+        "status": status,
+        "message": message,
+        "error": _clip_text(error, 500),
+        "query": SHOPIFY_SESSIONS_REPORT_QUERY,
+        "store": resolve_shopify_api_domain() or "",
+        "api_version": SHOPIFY_ADMIN_API_VERSION,
+        "required_scope": "read_reports",
+        "columns": [],
+        "rows": [],
+        "series": [],
+        "total_sessions": 0,
+        "total_online_store_visitors": 0,
+        "updated_at": _local_remote_now(),
+    }
+
+
+def fetch_shopify_sessions_report(force=False):
+    now = time.time()
+    cached = SHOPIFY_SESSIONS_REPORT_CACHE.get("payload")
+    if not force and cached and now - float(SHOPIFY_SESSIONS_REPORT_CACHE.get("at") or 0) < SHOPIFY_SESSIONS_REPORT_CACHE_SECONDS:
+        return cached
+
+    api_store = resolve_shopify_api_domain()
+    if not api_store or not SHOPIFY_ADMIN_TOKEN:
+        payload = _shopify_sessions_report_empty(
+            "Connect SHOPIFY_ADMIN_TOKEN with the read_reports scope to read the private Shopify Analytics sessions report.",
+            configured=False,
+        )
+        SHOPIFY_SESSIONS_REPORT_CACHE.update({"at": now, "payload": payload})
+        return payload
+
+    graphql_query = """
+    query SupportRDSessionsReport($query: String!) {
+      shopifyqlQuery(query: $query) {
+        tableData {
+          columns {
+            name
+            dataType
+            displayName
+          }
+          rows
+        }
+        parseErrors
+      }
+    }
+    """
+    try:
+        response = requests.post(
+            f"https://{api_store}/admin/api/{SHOPIFY_ADMIN_API_VERSION}/graphql.json",
+            headers={
+                "X-Shopify-Access-Token": SHOPIFY_ADMIN_TOKEN,
+                "Content-Type": "application/json",
+            },
+            json={"query": graphql_query, "variables": {"query": SHOPIFY_SESSIONS_REPORT_QUERY}},
+            timeout=16,
+        )
+        if response.status_code >= 400:
+            payload = _shopify_sessions_report_empty(
+                "Shopify Admin rejected the sessions report request.",
+                configured=True,
+                error=f"HTTP {response.status_code}: {response.text[:420]}",
+                status="admin_error",
+            )
+            SHOPIFY_SESSIONS_REPORT_CACHE.update({"at": now, "payload": payload})
+            return payload
+
+        body = response.json() or {}
+        if body.get("errors"):
+            payload = _shopify_sessions_report_empty(
+                "ShopifyQL sessions report could not run. Confirm the app has read_reports and the Admin API version supports ShopifyQL.",
+                configured=True,
+                error=json.dumps(body.get("errors"), ensure_ascii=False)[:500],
+                status="graphql_error",
+            )
+            SHOPIFY_SESSIONS_REPORT_CACHE.update({"at": now, "payload": payload})
+            return payload
+
+        result = ((body.get("data") or {}).get("shopifyqlQuery") or {})
+        parse_errors = result.get("parseErrors") or []
+        if parse_errors:
+            payload = _shopify_sessions_report_empty(
+                "ShopifyQL returned parse errors for the sessions report.",
+                configured=True,
+                error=json.dumps(parse_errors, ensure_ascii=False)[:500],
+                status="parse_error",
+            )
+            SHOPIFY_SESSIONS_REPORT_CACHE.update({"at": now, "payload": payload})
+            return payload
+
+        table_data = result.get("tableData") or {}
+        columns = table_data.get("columns") or []
+        rows = _normalize_shopifyql_rows(columns, table_data.get("rows") or [])
+        series = []
+        for row in rows:
+            label = row.get("day") or row.get("date") or row.get("column_1") or ""
+            label_text = str(label or "").strip()
+            sessions = _safe_float(row.get("sessions"))
+            visitors = _safe_float(row.get("online_store_visitors"))
+            if "total" in label_text.lower():
+                continue
+            if label_text or sessions or visitors:
+                series.append({
+                    "label": _clip_text(label_text or "current", 80),
+                    "sessions": int(round(sessions)),
+                    "online_store_visitors": int(round(visitors)),
+                })
+
+        total_sessions = int(sum(item.get("sessions", 0) for item in series))
+        total_visitors = int(sum(item.get("online_store_visitors", 0) for item in series))
+        payload = {
+            "ok": True,
+            "configured": True,
+            "source": "shopifyql_sessions_report",
+            "status": "connected",
+            "message": "Private Shopify Analytics sessions report connected through ShopifyQL.",
+            "query": SHOPIFY_SESSIONS_REPORT_QUERY,
+            "store": api_store,
+            "api_version": SHOPIFY_ADMIN_API_VERSION,
+            "required_scope": "read_reports",
+            "columns": columns,
+            "rows": rows[:50],
+            "series": series[-14:],
+            "total_sessions": total_sessions,
+            "total_online_store_visitors": total_visitors,
+            "updated_at": _local_remote_now(),
+        }
+        SHOPIFY_SESSIONS_REPORT_CACHE.update({"at": now, "payload": payload})
+        return payload
+    except Exception as exc:
+        payload = _shopify_sessions_report_empty(
+            "SupportRD could not reach Shopify Admin for the sessions report.",
+            configured=True,
+            error=str(exc),
+            status="request_error",
+        )
+        SHOPIFY_SESSIONS_REPORT_CACHE.update({"at": now, "payload": payload})
+        return payload
+
+
+def build_shopify_traffic_summary(include_sessions_report=True):
     windows = [1, 5, 15, 60, 1440]
     shopify_windows = [_summarize_shopify_window(minutes) for minutes in windows]
     local_windows = [summarize_local_remote_traffic(minutes) for minutes in windows]
+    sessions_report = fetch_shopify_sessions_report() if include_sessions_report else None
     latest_bot_returns = []
     latest_events = []
     try:
@@ -2559,11 +2762,12 @@ def build_shopify_traffic_summary():
     return {
         "ok": True,
         "updated_at": _local_remote_now(),
-        "source": "shopify_customer_events_and_supportrd_local",
+        "source": "shopify_customer_events_shopifyql_sessions_and_supportrd_local",
         "wave_score": wave_score,
         "wave_hot": wave_score >= 42 or bool(five.get("hot") or local_five.get("hot")),
         "shopify": shopify_windows,
         "local": local_windows,
+        "sessions_report": sessions_report,
         "latest_bot_returns": latest_bot_returns,
         "latest_events": latest_events,
         "first_bot_return_seen": bool(latest_bot_returns),
@@ -8985,7 +9189,7 @@ def shopify_traffic_pixel():
         return _shopify_traffic_json({"ok": True}, status=204)
     body = request.get_json(silent=True) or request.form.to_dict() or request.args.to_dict() or {}
     recorded = record_shopify_traffic_event(body, request.remote_addr or "")
-    summary = build_shopify_traffic_summary()
+    summary = build_shopify_traffic_summary(include_sessions_report=False)
     return _shopify_traffic_json({
         "ok": True,
         "recorded": {
@@ -9003,6 +9207,12 @@ def shopify_traffic_pixel():
 @app.route("/api/shopify/traffic/summary")
 def shopify_traffic_summary():
     return _shopify_traffic_json(build_shopify_traffic_summary())
+
+
+@app.route("/api/shopify/traffic/sessions-report")
+def shopify_traffic_sessions_report():
+    force = str(request.args.get("force") or "").lower() in ("1", "true", "yes")
+    return _shopify_traffic_json(fetch_shopify_sessions_report(force=force))
 
 
 @app.route("/api/shopify/traffic/snippet")
