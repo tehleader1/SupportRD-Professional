@@ -1038,7 +1038,7 @@
     const domain = String(site?.domain || '').toLowerCase();
     if (isOwnedSupportRDSurface(site)) return 'owned_support_rd';
     if (domain.includes('wordpress')) return 'wordpress_api';
-    if (['linkedin.com','instagram.com','youtube.com','tiktok.com','nextdoor.com'].includes(domain)) return 'social_platform_api';
+    if (['linkedin.com','instagram.com','youtube.com','tiktok.com','nextdoor.com','facebook.com','pinterest.com'].includes(domain)) return 'social_platform_api';
     if (domain.includes('cpcc.edu') || domain.includes('ncworks.gov') || domain.includes('charlotteworks.com') || domain.includes('charlotte.edu') || domain.includes('joinhandshake.com')) return 'email_or_form_api';
     if (domain.includes('patch.com') || domain.includes('medium.com') || domain.includes('substack.com') || domain.includes('featured.com') || domain.includes('producthunt.com')) return 'publisher_api';
     if (domain.includes('eventbrite.com') || domain.includes('meetup.com')) return 'event_listing_api';
@@ -1076,7 +1076,7 @@
           <div>
             <span>Current Website Target</span>
             <strong>${esc(current.label || current.domain || 'Target website')}</strong>
-            <p>${esc(currentOwned ? 'SupportRD-owned surface. The bot can work here in auto-owned mode; outside websites still stay review-ready.' : (current.purpose || 'The bot is preparing a draft/review route for this website lane.'))}</p>
+            <p>${esc(currentOwned ? 'SupportRD-owned surface. The bot can work here in auto-owned mode; outside websites still stay review-ready.' : (current.randomized ? `Random found target. Search route: ${current.search_query || current.purpose || 'fresh website discovery'}` : (current.purpose || 'The bot is preparing a draft/review route for this website lane.')))}</p>
             <code>${esc(current.tracking_url || 'https://supportrd.com?utm_source=supportrd_bot&sr_bot=1')}</code>
           </div>
           <a href="${esc(current.url || 'https://supportrd.com')}" target="_blank" rel="noopener">${currentOwned ? 'Open Owned Feed' : 'Open Website'}</a>
@@ -1085,7 +1085,7 @@
           <div>
             <span>Connected API Approval</span>
             <strong>${esc(channel.connected || currentOwned ? 'Ready for owner-approved submit' : 'Connect API needed')}</strong>
-            <p>${esc(currentOwned ? 'This one is owned by SupportRD, so approving can publish internally.' : (channel.connected ? `This target will hand off through ${channel.label || provider}.` : 'The draft is approved-ready, but an API/webhook connection is needed before outside submission.'))}</p>
+            <p>${esc(currentOwned ? 'This one is owned by SupportRD, so approving can publish internally.' : (channel.connected ? `This exact random target will hand off through ${channel.label || provider}.` : 'The random target and comment are approved-ready, but an API/webhook connection is needed before outside submission.'))}</p>
             <small>${esc(provider)} · ${esc(channel.status || 'status pending')}</small>
           </div>
           <button type="button" data-connected-submit>${currentOwned ? 'Publish Owned' : 'Approve Through Connected API'}</button>
@@ -1103,12 +1103,13 @@
             <article class="${isActive ? 'active' : ''}">
               <span>${esc(site.lane || item.placement_lane || placementLaneFor(item).label)}</span>
               <strong>${esc(site.label || site.domain || 'Target website')}</strong>
-              <p>${esc(owned ? 'Internal SupportRD route for the live bot/owned feed.' : (site.purpose || item.target || 'Owner-review placement route'))}</p>
+              <p>${esc(owned ? 'Internal SupportRD route for the live bot/owned feed.' : (site.randomized ? `Random found website candidate. ${site.purpose || ''}` : (site.purpose || item.target || 'Owner-review placement route')))}</p>
               <div>
                 <b>${esc(site.domain || 'supportrd.com')}</b>
-                <em>${esc(status)}</em>
+                <em>${esc(site.randomized ? 'random found' : status)}</em>
               </div>
               <small>${esc(rowProvider)} · ${esc(owned || rowChannel.connected ? 'connected-ready' : 'needs connect API')}</small>
+              ${site.search_query ? `<small>search: ${esc(site.search_query)}</small>` : ''}
               <small>${esc(item.title || item.category || 'SupportRD movement')}</small>
               <a href="${esc(site.url || 'https://supportrd.com')}" target="_blank" rel="noopener">${esc(action)}</a>
             </article>

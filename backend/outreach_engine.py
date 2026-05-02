@@ -48,6 +48,8 @@ CONNECT_API_TOKEN = (
     or ""
 ).strip()
 CONNECT_API_TIMEOUT_SECONDS = int(os.environ.get("OUTREACH_CONNECT_API_TIMEOUT_SECONDS", "12"))
+RANDOM_DISCOVERY_TARGETS_ENABLED = os.environ.get("SUPPORTRD_RANDOM_DISCOVERY_TARGETS", "true").strip().lower() != "false"
+RANDOM_DISCOVERY_WINDOW_SECONDS = max(60, int(os.environ.get("SUPPORTRD_RANDOM_DISCOVERY_WINDOW_SECONDS", "300")))
 FOCUS_TERMS = [
     "comment",
     "story",
@@ -886,6 +888,63 @@ WEBSITE_TARGETS = {
     ],
 }
 
+RANDOM_DISCOVERY_TARGETS = {
+    "community_college": [
+        {"label": "Central Piedmont", "domain": "cpcc.edu", "url": "https://www.cpcc.edu/", "purpose": "Community college entrance, advising, and career-readiness review route.", "search_query": "community college student success hair confidence resource"},
+        {"label": "Community College Daily", "domain": "ccdaily.com", "url": "https://www.ccdaily.com/", "purpose": "Community college news and resource research route.", "search_query": "community college student success guest post"},
+        {"label": "Achieving the Dream", "domain": "achievingthedream.org", "url": "https://achievingthedream.org/", "purpose": "Student-success organization research route.", "search_query": "student success resource community college"},
+        {"label": "Inside Higher Ed", "domain": "insidehighered.com", "url": "https://www.insidehighered.com/", "purpose": "College/career student support article research route.", "search_query": "student confidence career preparation higher ed"},
+    ],
+    "career": [
+        {"label": "CareerOneStop", "domain": "careeronestop.org", "url": "https://www.careeronestop.org/", "purpose": "Career-readiness resource research route.", "search_query": "career readiness resource submit community"},
+        {"label": "NCWorks", "domain": "ncworks.gov", "url": "https://www.ncworks.gov/", "purpose": "Career/workforce resource review route.", "search_query": "NCWorks community resource contact"},
+        {"label": "Charlotte Works", "domain": "charlotteworks.com", "url": "https://www.charlotteworks.com/", "purpose": "Local workforce and job-readiness outreach review route.", "search_query": "Charlotte workforce community resource"},
+        {"label": "LinkedIn", "domain": "linkedin.com", "url": "https://www.linkedin.com/", "purpose": "Owned-account career post draft destination; official account/API required.", "search_query": "hair confidence career post LinkedIn"},
+    ],
+    "college": [
+        {"label": "Handshake", "domain": "joinhandshake.com", "url": "https://joinhandshake.com/", "purpose": "Career-center/student job route research.", "search_query": "student career center resource posting"},
+        {"label": "UNC Charlotte", "domain": "charlotte.edu", "url": "https://www.charlotte.edu/", "purpose": "Campus/student-life research route for approved ad or bulletin options.", "search_query": "UNC Charlotte student resource contact"},
+        {"label": "CampusGroups", "domain": "campusgroups.com", "url": "https://www.campusgroups.com/", "purpose": "Student club and campus organization discovery route.", "search_query": "college student club hair confidence post"},
+        {"label": "Student Life Network", "domain": "studentlifenetwork.com", "url": "https://studentlifenetwork.com/", "purpose": "Student-life content and opportunity research route.", "search_query": "student life hair confidence career prep"},
+    ],
+    "social_video": [
+        {"label": "YouTube Search", "domain": "youtube.com", "url": "https://www.youtube.com/results?search_query=natural+hair+dryness+breakage", "purpose": "Random hair video comment research route; account/API approval required.", "search_query": "natural hair dryness breakage"},
+        {"label": "TikTok Search", "domain": "tiktok.com", "url": "https://www.tiktok.com/search?q=natural%20hair%20breakage", "purpose": "Random social video-feed research route; official account/API approval required.", "search_query": "natural hair breakage"},
+        {"label": "Instagram Explore", "domain": "instagram.com", "url": "https://www.instagram.com/explore/search/keyword/?q=natural%20hair", "purpose": "Random Reels/comment discovery route; official account/API approval required.", "search_query": "natural hair reels dryness"},
+        {"label": "Pinterest Search", "domain": "pinterest.com", "url": "https://www.pinterest.com/search/pins/?q=natural%20hair%20routine", "purpose": "Visual hair routine discovery route.", "search_query": "natural hair routine"},
+    ],
+    "blog_post": [
+        {"label": "Medium", "domain": "medium.com", "url": "https://medium.com/", "purpose": "Free article draft or publication research route.", "search_query": "natural hair write for us blog"},
+        {"label": "WordPress Discover", "domain": "wordpress.com", "url": "https://wordpress.com/read/search?q=natural%20hair", "purpose": "Random blog/comment discovery route for owner-reviewed publishing.", "search_query": "natural hair blog comment"},
+        {"label": "Substack Search", "domain": "substack.com", "url": "https://substack.com/search/natural%20hair", "purpose": "Newsletter/blog post draft discovery route.", "search_query": "natural hair newsletter guest post"},
+        {"label": "Blogger Search", "domain": "blogger.com", "url": "https://www.google.com/search?q=site%3Ablogspot.com+natural+hair+dryness", "purpose": "Blogspot natural-hair discussion discovery route.", "search_query": "site:blogspot.com natural hair dryness"},
+    ],
+    "featured_blog": [
+        {"label": "Patch", "domain": "patch.com", "url": "https://patch.com/", "purpose": "Local feature/news pitch research route.", "search_query": "Patch local business feature submission"},
+        {"label": "Featured", "domain": "featured.com", "url": "https://www.featured.com/", "purpose": "Expert/source pitch research route.", "search_query": "expert source natural hair technology"},
+        {"label": "Product Hunt", "domain": "producthunt.com", "url": "https://www.producthunt.com/", "purpose": "Tech-product listing/review research route.", "search_query": "AI hair website product launch"},
+        {"label": "SourceBottle", "domain": "sourcebottle.com", "url": "https://www.sourcebottle.com/", "purpose": "Media/source opportunity discovery route.", "search_query": "beauty technology source request"},
+    ],
+    "store_salon": [
+        {"label": "Yelp Charlotte Salons", "domain": "yelp.com", "url": "https://www.yelp.com/search?find_desc=natural+hair+salon&find_loc=Charlotte%2C+NC", "purpose": "Random salon/store discovery route; owner-reviewed outreach only.", "search_query": "natural hair salon Charlotte contact"},
+        {"label": "Google Business Search", "domain": "google.com/business", "url": "https://www.google.com/search?q=natural+hair+salon+Charlotte+NC", "purpose": "Salon/store discovery route, no fake reviews.", "search_query": "natural hair salon Charlotte NC"},
+        {"label": "StyleSeat", "domain": "styleseat.com", "url": "https://www.styleseat.com/", "purpose": "Stylist discovery and after-care outreach research route.", "search_query": "natural hair stylist aftercare"},
+        {"label": "SupportRD Catalog", "domain": "shop.supportrd.com", "url": "https://shop.supportrd.com/", "purpose": "Owned product education and catalog route.", "search_query": "SupportRD product education"},
+    ],
+    "family_community": [
+        {"label": "Nextdoor", "domain": "nextdoor.com", "url": "https://nextdoor.com/", "purpose": "Local/community post draft route with owner approval.", "search_query": "family hair help community post"},
+        {"label": "Eventbrite Charlotte", "domain": "eventbrite.com", "url": "https://www.eventbrite.com/d/nc--charlotte/community--events/", "purpose": "Community event and vendor-board research route.", "search_query": "Charlotte community event vendor natural hair"},
+        {"label": "Facebook Groups Search", "domain": "facebook.com", "url": "https://www.facebook.com/search/groups/?q=natural%20hair%20charlotte", "purpose": "Owned/approved group research route; no account action without permission.", "search_query": "natural hair Charlotte group"},
+        {"label": "SupportRD FAQ Lounge", "domain": "supportrd.com", "url": f"{SUPPORT_URL}/FAQ", "purpose": "Owned community discussion route.", "search_query": "SupportRD FAQ Lounge"},
+    ],
+    "attention_diversity": [
+        {"label": "Meetup Charlotte", "domain": "meetup.com", "url": "https://www.meetup.com/find/?keywords=natural%20hair&location=us--nc--Charlotte", "purpose": "Local group/event research route when attention is low.", "search_query": "Charlotte natural hair meetup"},
+        {"label": "Public Library Events", "domain": "cmlibrary.org", "url": "https://www.cmlibrary.org/events", "purpose": "Public library/community board research route.", "search_query": "library event community resource Charlotte"},
+        {"label": "Eventbrite", "domain": "eventbrite.com", "url": "https://www.eventbrite.com/d/nc--charlotte/health--events/", "purpose": "Community event placement research route.", "search_query": "Charlotte wellness community event"},
+        {"label": "SupportRD Growth Hub", "domain": "supportrd.com", "url": f"{SUPPORT_URL}/growth-hub", "purpose": "Owned proof/authority route.", "search_query": "SupportRD growth proof"},
+    ],
+}
+
 
 def _slug(value):
     text = "".join(ch.lower() if ch.isalnum() else "-" for ch in str(value or "support-rd"))
@@ -909,9 +968,12 @@ def comment_funnel_url(campaign="comment-wave", lane_id="comment"):
 def website_target_for(item, lane=None):
     lane = lane or placement_lane_for(item)
     lane_id = lane.get("id", "career")
-    targets = WEBSITE_TARGETS.get(lane_id) or WEBSITE_TARGETS["career"]
+    discovery_targets = RANDOM_DISCOVERY_TARGETS.get(lane_id) or RANDOM_DISCOVERY_TARGETS["career"]
+    static_targets = WEBSITE_TARGETS.get(lane_id) or WEBSITE_TARGETS["career"]
+    targets = discovery_targets if RANDOM_DISCOVERY_TARGETS_ENABLED else static_targets
     basis = str(item.get("key") or item.get("title") or item.get("category") or "")
-    index = sum(ord(ch) for ch in basis) % len(targets)
+    bucket = int(time.time() // RANDOM_DISCOVERY_WINDOW_SECONDS) if RANDOM_DISCOVERY_TARGETS_ENABLED else 0
+    index = (sum(ord(ch) for ch in basis) + bucket) % len(targets)
     target = dict(targets[index])
     campaign = _slug(f"{lane_id}-{item.get('title') or item.get('category')}")
     domain = str(target.get("domain") or "").lower()
@@ -919,6 +981,12 @@ def website_target_for(item, lane=None):
     target.update({
         "lane_id": lane_id,
         "lane": lane.get("label", "Career comment/post"),
+        "target_source": "random_discovery_pool" if RANDOM_DISCOVERY_TARGETS_ENABLED else "static_review_pool",
+        "randomized": bool(RANDOM_DISCOVERY_TARGETS_ENABLED),
+        "random_window_seconds": RANDOM_DISCOVERY_WINDOW_SECONDS if RANDOM_DISCOVERY_TARGETS_ENABLED else 0,
+        "found_at": utc(),
+        "found_reason": "Random timed discovery target selected for this approved bot movement." if RANDOM_DISCOVERY_TARGETS_ENABLED else "Static target selected for this review lane.",
+        "search_query": target.get("search_query") or f"{lane.get('label', 'SupportRD')} SupportRD natural hair",
         "status": "owned_surface_live" if owned_surface else "queued_for_owner_review",
         "action": "open_owned_surface" if owned_surface else "open_review_target",
         "tracking_url": comment_funnel_url(campaign, lane_id),
@@ -940,7 +1008,7 @@ def connected_provider_for_target(target):
         return "owned_support_rd"
     if "wordpress" in domain:
         return "wordpress_api"
-    if domain in {"linkedin.com", "instagram.com", "youtube.com", "tiktok.com", "nextdoor.com"}:
+    if domain in {"linkedin.com", "instagram.com", "youtube.com", "tiktok.com", "nextdoor.com", "facebook.com", "pinterest.com"}:
         return "social_platform_api"
     if any(term in domain for term in ["cpcc.edu", "ncworks.gov", "charlotteworks.com", "charlotte.edu", "joinhandshake.com"]):
         return "email_or_form_api"
@@ -1231,6 +1299,9 @@ def settings_payload():
         "permission_open_targets_enabled": PERMISSION_OPEN_TARGETS_ENABLED,
         "auto_approval_scope": "SupportRD-owned/internal surfaces only",
         "permission_open_scope": "Public listing/submission/free-post targets are prioritized as ready targets, but third-party posting still requires a permitted connected channel.",
+        "random_discovery_targets_enabled": RANDOM_DISCOVERY_TARGETS_ENABLED,
+        "random_discovery_window_seconds": RANDOM_DISCOVERY_WINDOW_SECONDS,
+        "random_discovery_scope": "Each movement receives a timed random discovery target from the lane pool; the connected API receives that exact found target and comment draft.",
         "comment_funnel_route": f"{SUPPORT_URL.rstrip('/')}/{COMMENT_FUNNEL_PATH.strip('/')}",
         "comment_funnel_goal": "Move comment/story readers into the hair-problem intake so bot traffic can be measured against real customer intent.",
         "allowed_work": allowed_work,
