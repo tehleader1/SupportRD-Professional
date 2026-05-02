@@ -467,6 +467,7 @@ SEC_RATE_MAX_PER_WINDOW = int(os.environ.get("SEC_RATE_MAX_PER_WINDOW", "180"))
 SEC_CREDIT_WINDOW_SEC = int(os.environ.get("SEC_CREDIT_WINDOW_SEC", "300"))
 SEC_CREDIT_MAX_PER_WINDOW = int(os.environ.get("SEC_CREDIT_MAX_PER_WINDOW", "30"))
 SEC_CREDIT_USER_COOLDOWN_SEC = int(os.environ.get("SEC_CREDIT_USER_COOLDOWN_SEC", "180"))
+SECURITY_TRUSTED_IPS = set([ip.strip() for ip in os.environ.get("SECURITY_TRUSTED_IPS", "").split(",") if ip.strip()])
 CREDIT_MANUAL_REVIEW_THRESHOLD = float(os.environ.get("CREDIT_MANUAL_REVIEW_THRESHOLD", "5000"))
 CREDIT_MAX_OPEN_OBLIGATIONS = int(os.environ.get("CREDIT_MAX_OPEN_OBLIGATIONS", "1"))
 FREEZE_MINUTES = int(os.environ.get("FREEZE_MINUTES", "1440"))
@@ -1584,6 +1585,44 @@ def client_ip():
 def is_local_dev_ip(ip):
     return (ip or "").strip().lower() in {"127.0.0.1", "::1", "localhost"}
 
+def security_admin_token_ok():
+    supplied = (
+        request.headers.get("X-Outreach-Admin-Token")
+        or request.headers.get("X-Globaltracker-Admin-Token")
+        or request.headers.get("X-Admin-Token")
+        or request.args.get("token")
+        or ""
+    ).strip()
+    auth = (request.headers.get("Authorization") or "").strip()
+    if auth.lower().startswith("bearer "):
+        supplied = auth[7:].strip()
+    return bool(OUTREACH_ADMIN_TOKEN and supplied and supplied == OUTREACH_ADMIN_TOKEN)
+
+def is_trusted_security_request(ip):
+    ip = (ip or "").strip()
+    if is_local_dev_ip(ip) or ip in SECURITY_TRUSTED_IPS:
+        return True
+    try:
+        if is_admin():
+            return True
+    except:
+        pass
+    return security_admin_token_ok()
+
+def security_rate_exempt_path(path):
+    path = (path or "").lower()
+    if path.startswith("/static/") or path in {"/favicon.ico", "/sw.js", "/api/ping"}:
+        return True
+    allowed_prefixes = (
+        "/health",
+        "/api/shopify/traffic/",
+        "/api/local-remote/traffic/",
+        "/api/outreach/",
+        "/api/globaltracker/",
+        "/api/security/self-unban-speedhack",
+    )
+    return any(path.startswith(prefix) for prefix in allowed_prefixes)
+
 def log_security_event(ip, path, event_type, detail=""):
     try:
         conn = sqlite3.connect(SECURITY_DB_PATH)
@@ -1634,6 +1673,23 @@ def banned_reason(ip):
         return reason
     except:
         return None
+
+def clear_speedhack_ban_for_ip(ip):
+    ip = (ip or "").strip()
+    if not ip:
+        return 0
+    try:
+        conn = sqlite3.connect(SECURITY_DB_PATH)
+        cur = conn.cursor()
+        cur.execute("DELETE FROM banned_ips WHERE ip = ? AND reason = ?", (ip, "speed_hack_detected"))
+        deleted = int(cur.rowcount or 0)
+        conn.commit()
+        conn.close()
+        if deleted:
+            log_security_event(ip, "/api/security/self-unban-speedhack", "self_unban", "speed_hack_detected")
+        return deleted
+    except:
+        return 0
 
 def rate_hit(ip, bucket, window_sec, max_hits):
     now = int(time.time())
@@ -4613,10 +4669,14 @@ def security_guard():
     path = (request.path or "").lower()
     if path.startswith("/health"):
         return None
+    if path.startswith("/static/") or path in {"/favicon.ico", "/sw.js"}:
+        return None
     if path.startswith("/api/shopify/traffic/"):
         return None
+    if path.startswith("/api/security/self-unban-speedhack"):
+        return None
     ip = client_ip()
-    if is_local_dev_ip(ip):
+    if is_trusted_security_request(ip):
         return None
 
     reason = banned_reason(ip)
@@ -4630,11 +4690,11 @@ def security_guard():
             ban_ip(ip, "suspicious_path_probe", path)
             return Response(banned_screen("suspicious_path_probe"), status=403, mimetype="text/html")
 
-    if rate_hit(ip, "global", SEC_RATE_WINDOW_SEC, SEC_RATE_MAX_PER_WINDOW):
-        ban_ip(ip, "speed_hack_detected", f"{path}")
+    if not security_rate_exempt_path(path) and rate_hit(ip, "global", SEC_RATE_WINDOW_SEC, SEC_RATE_MAX_PER_WINDOW):
+        log_security_event(ip, path, "speed_hack_detected", "soft_rate_limit")
         if path.startswith("/api/"):
-            return {"ok": False, "error": "banned", "message": "BANNED", "reason": "speed_hack_detected"}, 403
-        return Response(banned_screen("speed_hack_detected"), status=403, mimetype="text/html")
+            return {"ok": False, "error": "rate_limited", "message": "Slow down for a moment.", "reason": "speed_hack_detected"}, 429
+        return Response("Too many requests. Please wait a moment and refresh.", status=429, mimetype="text/plain")
 
     if path.startswith("/api/credit"):
         if rate_hit(ip, "credit", SEC_CREDIT_WINDOW_SEC, SEC_CREDIT_MAX_PER_WINDOW):
@@ -5062,7 +5122,7 @@ def community_alert_contacts():
 
 @app.route("/api/security/banned")
 def security_banned_list():
-    if not is_admin():
+    if not (is_admin() or security_admin_token_ok()):
         return {"ok": False, "error": "unauthorized"}, 401
     try:
         conn = sqlite3.connect(SECURITY_DB_PATH)
@@ -5082,9 +5142,21 @@ def security_banned_list():
 
 @app.route("/api/security/unban", methods=["POST"])
 def security_unban():
-    if not is_admin():
+    if not (is_admin() or security_admin_token_ok()):
         return {"ok": False, "error": "unauthorized"}, 401
-    ip = (request.json or {}).get("ip", "")
+    body = request.get_json(silent=True) or {}
+    if body.get("all_speedhack"):
+        try:
+            conn = sqlite3.connect(SECURITY_DB_PATH)
+            cur = conn.cursor()
+            cur.execute("DELETE FROM banned_ips WHERE reason = ?", ("speed_hack_detected",))
+            deleted = int(cur.rowcount or 0)
+            conn.commit()
+            conn.close()
+            return {"ok": True, "deleted": deleted, "reason": "speed_hack_detected"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)[:160]}, 500
+    ip = (body.get("ip") or "").strip()
     if not ip:
         return {"ok": False, "error": "ip_required"}, 400
     try:
@@ -5096,6 +5168,17 @@ def security_unban():
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)[:160]}, 500
+
+@app.route("/api/security/self-unban-speedhack", methods=["GET", "POST"])
+def security_self_unban_speedhack():
+    ip = client_ip()
+    deleted = clear_speedhack_ban_for_ip(ip)
+    return {
+        "ok": True,
+        "deleted": deleted,
+        "reason": "speed_hack_detected",
+        "message": "Speedhack false-positive ban cleared for this IP.",
+    }
 
 @app.route("/api/community/launch-alert", methods=["POST"])
 def community_launch_alert():
