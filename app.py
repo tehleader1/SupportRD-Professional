@@ -2639,10 +2639,21 @@ def fetch_shopify_sessions_report(force=False):
 
         body = response.json() or {}
         if body.get("errors"):
+            error_text = json.dumps(body.get("errors"), ensure_ascii=False)[:500]
+            if "read_reports" in error_text or "protected customer data" in error_text.lower():
+                message = (
+                    "Shopify Admin blocked the sessions report. Update the custom app token with read_reports "
+                    "and complete Shopify protected customer data access for analytics sessions."
+                )
+            else:
+                message = (
+                    "ShopifyQL sessions report could not run. Confirm the app has read_reports "
+                    "and the Admin API version supports ShopifyQL."
+                )
             payload = _shopify_sessions_report_empty(
-                "ShopifyQL sessions report could not run. Confirm the app has read_reports and the Admin API version supports ShopifyQL.",
+                message,
                 configured=True,
-                error=json.dumps(body.get("errors"), ensure_ascii=False)[:500],
+                error=error_text,
                 status="graphql_error",
             )
             SHOPIFY_SESSIONS_REPORT_CACHE.update({"at": now, "payload": payload})
