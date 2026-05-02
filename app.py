@@ -2334,10 +2334,12 @@ def _traffic_is_bot_return(payload, source, campaign, path):
 
 
 def build_shopify_traffic_pixel_snippet():
-    events_literal = ", ".join([f"'{name}'" for name in SHOPIFY_TRAFFIC_EVENT_NAMES])
+    subscriptions = "\n".join(
+        f"analytics.subscribe('{name}', supportRDSendTraffic);"
+        for name in SHOPIFY_TRAFFIC_EVENT_NAMES
+    )
     return f"""// SupportRD live traffic reader for Shopify Customer Events > Custom pixel
 const SUPPORT_RD_TRAFFIC_ENDPOINT = 'https://supportrd.com/api/shopify/traffic/pixel';
-const SUPPORT_RD_EVENTS = [{events_literal}];
 
 function supportRDSendTraffic(event) {{
   const doc = (event && event.context && event.context.document) || {{}};
@@ -2369,9 +2371,7 @@ function supportRDSendTraffic(event) {{
   }}).catch(() => {{}});
 }}
 
-SUPPORT_RD_EVENTS.forEach((eventName) => {{
-  analytics.subscribe(eventName, supportRDSendTraffic);
-}});
+{subscriptions}
 """
 
 
