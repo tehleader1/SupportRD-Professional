@@ -2596,6 +2596,16 @@ def _traffic_is_bot_return(payload, source, campaign, path):
     return any(marker in combined for marker in BOT_RETURN_MARKERS)
 
 
+def _traffic_is_dashboard_ping(payload, source, event_name):
+    payload = payload or {}
+    flag = str(payload.get("dashboard_ping") or payload.get("heartbeat") or "").strip().lower()
+    return (
+        flag in {"1", "true", "yes", "dashboard"}
+        or (event_name or "").strip().lower() == "globaltracker_dashboard_view"
+        or (source or "").strip().lower() == "supportrd_globaltracker"
+    )
+
+
 def build_shopify_traffic_pixel_snippet():
     subscriptions = "\n".join(
         f"analytics.subscribe('{name}', supportRDSendTraffic);"
@@ -2663,6 +2673,7 @@ def record_shopify_traffic_event(payload, ip_address=""):
     source = _traffic_source(payload)
     campaign = _traffic_campaign(payload)
     is_bot_return = _traffic_is_bot_return(payload, source, campaign, path)
+    is_dashboard_ping = _traffic_is_dashboard_ping(payload, source, event_name)
     safe_ip = _clip_text(ip_address, 80)
     first_bot_return = False
     try:
@@ -2709,7 +2720,8 @@ def record_shopify_traffic_event(payload, ip_address=""):
         conn.close()
     except:
         pass
-    record_local_remote_traffic(f"{source}:{visitor_key}", path, ip_address)
+    if not is_dashboard_ping:
+        record_local_remote_traffic(f"{source}:{visitor_key}", path, ip_address)
     return {
         "event_name": event_name,
         "visitor_key": visitor_key,
@@ -2717,6 +2729,7 @@ def record_shopify_traffic_event(payload, ip_address=""):
         "source": source,
         "campaign": campaign,
         "is_bot_return": is_bot_return,
+        "is_dashboard_ping": is_dashboard_ping,
         "first_bot_return": first_bot_return,
         "created_at": now_iso,
     }
@@ -2728,24 +2741,34 @@ def _summarize_shopify_window(window_minutes=5):
     try:
         conn = sqlite3.connect(CREDIT_DB_PATH)
         cur = conn.cursor()
+        dashboard_filter = "(event_name = 'globaltracker_dashboard_view' OR source = 'supportrd_globaltracker')"
+        real_filter = f"created_at >= ? AND NOT {dashboard_filter}"
         events = int((cur.execute(
-            "SELECT COUNT(*) FROM shopify_traffic_events WHERE created_at >= ?",
+            f"SELECT COUNT(*) FROM shopify_traffic_events WHERE {real_filter}",
             (cutoff,),
         ).fetchone() or [0])[0] or 0)
         visitors = int((cur.execute(
-            "SELECT COUNT(DISTINCT visitor_key) FROM shopify_traffic_events WHERE created_at >= ?",
+            f"SELECT COUNT(DISTINCT visitor_key) FROM shopify_traffic_events WHERE {real_filter}",
             (cutoff,),
         ).fetchone() or [0])[0] or 0)
         bot_events = int((cur.execute(
-            "SELECT COUNT(*) FROM shopify_traffic_events WHERE created_at >= ? AND is_bot_return = 1",
+            f"SELECT COUNT(*) FROM shopify_traffic_events WHERE {real_filter} AND is_bot_return = 1",
             (cutoff,),
         ).fetchone() or [0])[0] or 0)
         bot_visitors = int((cur.execute(
             "SELECT COUNT(DISTINCT visitor_key) FROM bot_return_visits WHERE created_at >= ?",
             (cutoff,),
         ).fetchone() or [0])[0] or 0)
+        dashboard_events = int((cur.execute(
+            f"SELECT COUNT(*) FROM shopify_traffic_events WHERE created_at >= ? AND {dashboard_filter}",
+            (cutoff,),
+        ).fetchone() or [0])[0] or 0)
+        dashboard_visitors = int((cur.execute(
+            f"SELECT COUNT(DISTINCT visitor_key) FROM shopify_traffic_events WHERE created_at >= ? AND {dashboard_filter}",
+            (cutoff,),
+        ).fetchone() or [0])[0] or 0)
         top_paths = cur.execute(
-            "SELECT path, COUNT(*) AS hits FROM shopify_traffic_events WHERE created_at >= ? "
+            f"SELECT path, COUNT(*) AS hits FROM shopify_traffic_events WHERE {real_filter} "
             "GROUP BY path ORDER BY hits DESC LIMIT 5",
             (cutoff,),
         ).fetchall() or []
@@ -2756,6 +2779,8 @@ def _summarize_shopify_window(window_minutes=5):
             "visitors": visitors,
             "bot_events": bot_events,
             "bot_visitors": bot_visitors,
+            "dashboard_events": dashboard_events,
+            "dashboard_visitors": dashboard_visitors,
             "hot": visitors >= 3 or events >= 6 or bot_visitors >= 1,
             "top_paths": [{"path": row[0] or "/", "hits": int(row[1] or 0)} for row in top_paths],
         }
@@ -2766,6 +2791,8 @@ def _summarize_shopify_window(window_minutes=5):
             "visitors": 0,
             "bot_events": 0,
             "bot_visitors": 0,
+            "dashboard_events": 0,
+            "dashboard_visitors": 0,
             "hot": False,
             "top_paths": [],
         }
@@ -3145,6 +3172,7 @@ def build_shopify_traffic_summary(include_sessions_report=False):
     manual_sessions_report = latest_manual_shopify_sessions_report()
     latest_bot_returns = []
     latest_events = []
+    latest_dashboard_pings = []
     try:
         conn = sqlite3.connect(CREDIT_DB_PATH)
         cur = conn.cursor()
@@ -3171,20 +3199,35 @@ def build_shopify_traffic_summary(include_sessions_report=False):
             }
             for row in (cur.execute(
                 "SELECT event_name, source, campaign, path, is_bot_return, created_at "
-                "FROM shopify_traffic_events ORDER BY id DESC LIMIT 12"
+                "FROM shopify_traffic_events "
+                "WHERE NOT (event_name = 'globaltracker_dashboard_view' OR source = 'supportrd_globaltracker') "
+                "ORDER BY id DESC LIMIT 12"
+            ).fetchall() or [])
+        ]
+        latest_dashboard_pings = [
+            {
+                "event_name": row[0] or "",
+                "source": row[1] or "",
+                "path": row[2] or "/",
+                "created_at": row[3] or "",
+            }
+            for row in (cur.execute(
+                "SELECT event_name, source, path, created_at FROM shopify_traffic_events "
+                "WHERE event_name = 'globaltracker_dashboard_view' OR source = 'supportrd_globaltracker' "
+                "ORDER BY id DESC LIMIT 6"
             ).fetchall() or [])
         ]
         conn.close()
     except:
         latest_bot_returns = []
         latest_events = []
+        latest_dashboard_pings = []
     five = next((item for item in shopify_windows if item["window_minutes"] == 5), shopify_windows[0])
     local_five = next((item for item in local_windows if item["window_minutes"] == 5), local_windows[0])
     wave_score = min(
         100,
         int(five.get("events", 0)) * 8
         + int(five.get("visitors", 0)) * 15
-        + int(local_five.get("events", 0)) * 4
         + int(five.get("bot_visitors", 0)) * 32,
     )
     return {
@@ -3200,6 +3243,8 @@ def build_shopify_traffic_summary(include_sessions_report=False):
         "manual_sessions_report": manual_sessions_report,
         "latest_bot_returns": latest_bot_returns,
         "latest_events": latest_events,
+        "latest_dashboard_pings": latest_dashboard_pings,
+        "dashboard_ping_note": "Globaltracker ping events are heartbeat checks and are not counted as real visitor traffic.",
         "first_bot_return_seen": bool(latest_bot_returns),
         "bot_return_total": int((shopify_windows[-1] or {}).get("bot_visitors", 0) or 0),
         "pixel_snippet": build_shopify_traffic_pixel_snippet(),

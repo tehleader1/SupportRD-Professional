@@ -13,6 +13,7 @@ SUPPORT_URL = os.environ.get("SUPPORT_RD_PUBLIC_URL", "https://supportrd.com")
 BOT_AGENT_REF = os.environ.get("SUPPORT_RD_BOT_AGENT_REF", "agt_69f2460cc584819192e4a3a276e8b004")
 ENGINE_ENABLED = os.environ.get("OUTREACH_ENGINE_ENABLED", "true").lower() == "true"
 ENGINE_INTERVAL_SECONDS = int(os.environ.get("OUTREACH_ENGINE_INTERVAL_SECONDS", "900"))
+COMMENT_FUNNEL_PATH = os.environ.get("SUPPORT_RD_COMMENT_FUNNEL_PATH", "/hair-problems")
 ADMIN_TOKEN = (
     os.environ.get("OUTREACH_ADMIN_TOKEN")
     or os.environ.get("GLOBALTRACKER_ADMIN_TOKEN")
@@ -300,17 +301,18 @@ def log_event(event_type, payload=None):
 def copy_for(item):
     cat = (item.get("category") or "opportunity").lower()
     hook = item.get("hook") or "SupportRD Caribbean Hair Solutions"
+    funnel_url = comment_funnel_url(f"draft-{cat}", cat)
     if ("salon" in cat or "hair store" in cat) and "comment" not in cat and "post" not in cat:
         message = (
             "Hello, I am preparing partnership outreach for SupportRD Caribbean Hair Solutions. "
             "SupportRD helps people with natural-hair concerns using ARIA guidance, Profile Hair Prep, and a Shopify product catalog. "
-            f"Would this be a fit for a reviewed listing, collaboration, or customer resource? {SUPPORT_URL}"
+            f"Would this be a fit for a reviewed listing, collaboration, or customer resource? {funnel_url}"
         )
     elif "social video" in cat:
         message = (
             "Social video feed comment draft: keep it short and useful under hair videos where people ask about dryness, "
             "breakage, growth, styling, or products. Do not post unless the account owner approves and the platform rules allow it. "
-            f"Approved resource link: {SUPPORT_URL}"
+            f"Approved resource link: {funnel_url}"
         )
     elif "comment" in cat and not any(term in cat for term in ["community college", "career", "college", "featured blog", "blog post", "salon", "hair store", "social video"]):
         message = (
@@ -318,73 +320,73 @@ def copy_for(item):
             "avoid pressure, and include SupportRD only when the community rules allow links and the owner approves. "
             "Rotate the SupportRD hooks when relevant: New Hair AI!, New Hair AI Premiums, New Hair Scanner, "
             "New Hair Analysis, Exclusive suburbs Hair AI, and the linked Dominican Republic product. "
-            f"Resource if approved: {SUPPORT_URL}"
+            f"Resource if approved: {funnel_url}"
         )
     elif "featured blog" in cat:
         message = (
             "Featured blog pitch draft: SupportRD can be positioned as a tech-enabled natural-hair solutions website with ARIA, "
             "Profile Hair Prep, FAQ support, product guidance, and trusted checkout routes. "
-            f"Feature resource: {SUPPORT_URL}"
+            f"Feature resource: {funnel_url}"
         )
     elif "blog post" in cat:
         message = (
             "Free blog post draft: a practical article about dry hair, breakage, product confusion, and how SupportRD routes "
-            f"people into ARIA/Profile help and product guidance. Resource: {SUPPORT_URL}"
+            f"people into ARIA/Profile help and product guidance. Resource: {funnel_url}"
         )
     elif "salon store" in cat or "salon page" in cat:
         message = (
             "Salon comment/post draft: friendly after-care guidance for salon clients who still need help choosing products "
-            f"or understanding hair issues after an appointment. Approved resource: {SUPPORT_URL}"
+            f"or understanding hair issues after an appointment. Approved resource: {funnel_url}"
         )
     elif "hair store" in cat:
         message = (
             "Hair store comment/post draft: help shoppers understand dryness, breakage, shine, and product choices while "
-            f"routing approved readers to SupportRD product guidance. Approved resource: {SUPPORT_URL}"
+            f"routing approved readers to SupportRD product guidance. Approved resource: {funnel_url}"
         )
     elif "family" in cat:
         message = (
             "Free family hair help: SupportRD helps parents, students, and working families understand dryness, breakage, "
             "growth routines, and product guidance in one place. "
-            f"Use ARIA/Profile Hair Prep at {SUPPORT_URL} when the post is approved."
+            f"Use ARIA/Profile Hair Prep at {funnel_url} when the post is approved."
         )
     elif "community college" in cat:
         message = (
             "SupportRD.com Get your Hair Right: a friendly hair-confidence resource for community college entrance, "
             "orientation, advising, career fairs, and first-job preparation. "
-            f"Approved post route: {SUPPORT_URL}"
+            f"Approved post route: {funnel_url}"
         )
     elif "community" in cat:
         message = (
             "SupportRD community draft: free natural-hair guidance, product education, ARIA help, and Profile Hair Prep "
-            f"for people looking for real hair solutions. Owner approval required before posting {SUPPORT_URL}."
+            f"for people looking for real hair solutions. Owner approval required before posting {funnel_url}."
         )
     elif "college" in cat or "career" in cat:
         message = (
             "SupportRD Caribbean Get Away: get your hair right before interviews, school, work, or your next opportunity. "
-            f"Try Profile Hair Prep and ARIA hair guidance at {SUPPORT_URL}."
+            f"Try Profile Hair Prep and ARIA hair guidance at {funnel_url}."
         )
     elif "radio" in cat:
-        message = f"SupportRD.com - Suave Natural Hair Solution. Caribbean Hair Solutions from Dominican Republic, STI. Join us at {SUPPORT_URL}."
+        message = f"SupportRD.com - Suave Natural Hair Solution. Caribbean Hair Solutions from Dominican Republic, STI. Join us at {funnel_url}."
     elif "keyword" in cat:
         message = (
             "Best Tech Hair Website 2026 candidate: SupportRD combines AI hair analysis, voice assistants, Shopify catalog, "
-            f"live Diary, FAQ Lounge, and Studio tools around natural-hair solutions. Visit {SUPPORT_URL}."
+            f"live Diary, FAQ Lounge, and Studio tools around natural-hair solutions. Visit {funnel_url}."
         )
     elif "social" in cat:
         message = (
             "Helpful draft only: If someone asks about dry hair, breakage, or product guidance, offer a short answer first. "
-            f"Only include {SUPPORT_URL} when links are welcome and the account owner approves."
+            f"Only include {funnel_url} when links are welcome and the account owner approves."
         )
     else:
         message = (
             f"{hook}. SupportRD brings AI hair guidance, Caribbean hair solutions, Profile prep, FAQ Lounge, "
-            f"and product links together. Learn more at {SUPPORT_URL}."
+            f"and product links together. Learn more at {funnel_url}."
         )
     return {
         "headline": item.get("title", "SupportRD outreach"),
         "target": item.get("target", "public audience"),
         "message": message,
-        "cta": SUPPORT_URL,
+        "cta": funnel_url,
     }
 
 
@@ -577,26 +579,27 @@ def followup_draft_for(item, context=""):
     intent = followup_intent_for(item, context)
     promo_hook_line = " / ".join(SUPPORT_RD_PROMO_HOOKS)
     context_line = f" I saw this context: {context}" if context else ""
+    funnel_url = comment_funnel_url(f"followup-{category}", category)
     if "comment" in category or "social video" in category:
         opening = "That makes sense. A simple first step is to look at what the hair is doing before adding more products."
         value = "For dryness or breakage, SupportRD can lead with New Hair AI!, the New Hair Scanner, and New Hair Analysis so the person gets a real read before choosing products."
-        cta = f"If helpful links are welcome here, SupportRD can help check the concern and choose a route: {SUPPORT_URL}"
+        cta = f"If helpful links are welcome here, SupportRD can help check the concern and choose a route: {funnel_url}"
     elif "story" in category or "letter" in category or "family" in category:
         opening = "I built SupportRD around real family moments where people need hair help before school, work, events, or a big next step."
         value = "The point is not to overwhelm people; it is to give them a clear place to ask, scan, learn, and choose what fits, including New Hair AI Premiums and the linked Dominican Republic product path when it matches their concern."
-        cta = f"When this is approved for posting, send people to {SUPPORT_URL} for ARIA, Profile Hair Prep, FAQ support, and products."
+        cta = f"When this is approved for posting, send people to {funnel_url} for ARIA, Profile Hair Prep, FAQ support, and products."
     elif "career" in category or "college" in category:
         opening = "Hair confidence matters when someone is walking into class, an interview, a first shift, or a career fair."
         value = "SupportRD gives a simple natural-hair support path with New Hair AI!, New Hair Scanner, and New Hair Analysis for people trying to get ready without guessing."
-        cta = f"If the page allows helpful resources, share {SUPPORT_URL} after review."
+        cta = f"If the page allows helpful resources, share {funnel_url} after review."
     elif "salon" in category or "hair store" in category:
         opening = "This can work as after-care support, not a replacement for the stylist or store."
         value = "SupportRD helps customers understand dryness, breakage, growth routines, and product choices after they leave the chair or aisle, with Exclusive suburbs Hair AI and a linked Dominican Republic product route when relevant."
-        cta = f"If approved, route them to {SUPPORT_URL} as the support resource."
+        cta = f"If approved, route them to {funnel_url} as the support resource."
     else:
         opening = "I wanted to follow up with something useful instead of just dropping a link."
         value = "SupportRD is built to help people understand natural-hair concerns and find the right support path through New Hair AI!, New Hair Scanner, New Hair Analysis, and premium/product routes."
-        cta = f"If it is welcome here, {SUPPORT_URL} is the resource."
+        cta = f"If it is welcome here, {funnel_url} is the resource."
     return {
         "source_key": item.get("key") or str(item.get("id") or "manual-followup"),
         "source_id": item.get("id"),
@@ -609,7 +612,7 @@ def followup_draft_for(item, context=""):
         "promo_hooks": SUPPORT_RD_PROMO_HOOKS,
         "promo_hook_line": promo_hook_line,
         "draft": f"{opening}{context_line}\n\n{value}\n\n{cta}",
-        "cta": SUPPORT_URL,
+        "cta": funnel_url,
         "approval_boundary": "Explicit approval path: approve the draft first; external websites/social accounts still require a connected permitted channel before any automated action.",
         "agent_action": "analyze_context -> infer_intent -> draft_followup -> queue_owner_review",
         "created_at": utc(),
@@ -782,6 +785,18 @@ def _slug(value):
     return text.strip("-")[:80] or "support-rd"
 
 
+def comment_funnel_url(campaign="comment-wave", lane_id="comment"):
+    base = f"{SUPPORT_URL.rstrip('/')}/{COMMENT_FUNNEL_PATH.strip('/')}"
+    params = (
+        "utm_source=supportrd_bot"
+        "&utm_medium=comment_wave"
+        "&sr_bot=1"
+        f"&utm_campaign={_slug(campaign)}"
+        f"&sr_lane={_slug(lane_id or 'comment')}"
+    )
+    return f"{base}?{params}"
+
+
 def website_target_for(item, lane=None):
     lane = lane or placement_lane_for(item)
     lane_id = lane.get("id", "career")
@@ -790,13 +805,14 @@ def website_target_for(item, lane=None):
     index = sum(ord(ch) for ch in basis) % len(targets)
     target = dict(targets[index])
     campaign = _slug(f"{lane_id}-{item.get('title') or item.get('category')}")
-    separator = "&" if "?" in SUPPORT_URL else "?"
     target.update({
         "lane_id": lane_id,
         "lane": lane.get("label", "Career comment/post"),
         "status": "queued_for_owner_review",
         "action": "open_review_target",
-        "tracking_url": f"{SUPPORT_URL}{separator}utm_source=supportrd_bot&utm_medium=outreach&sr_bot=1&utm_campaign={campaign}",
+        "tracking_url": comment_funnel_url(campaign, lane_id),
+        "conversion_route": "hair_problem_intake",
+        "conversion_goal": "hair issue, product interest, account signup, or catalog checkout",
         "campaign": campaign,
         "permission_note": "Research/draft target only. The bot does not post, comment, email, submit, or use accounts without owner approval.",
     })
@@ -824,6 +840,8 @@ def settings_payload():
         "permission_open_targets_enabled": PERMISSION_OPEN_TARGETS_ENABLED,
         "auto_approval_scope": "SupportRD-owned/internal surfaces only",
         "permission_open_scope": "Public listing/submission/free-post targets are prioritized as ready targets, but third-party posting still requires a permitted connected channel.",
+        "comment_funnel_route": f"{SUPPORT_URL.rstrip('/')}/{COMMENT_FUNNEL_PATH.strip('/')}",
+        "comment_funnel_goal": "Move comment/story readers into the hair-problem intake so bot traffic can be measured against real customer intent.",
         "allowed_work": allowed_work,
         "blocked_without_connected_channel": blocked_without_channel,
         "focus_mode": FOCUS_MODE,

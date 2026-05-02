@@ -514,7 +514,8 @@
           referrer: document.referrer || '',
           utm_source: params.get('utm_source') || '',
           utm_campaign: params.get('utm_campaign') || '',
-          sr_bot: params.get('sr_bot') || params.get('sr_campaign') || ''
+          sr_bot: params.get('sr_bot') || params.get('sr_campaign') || '',
+          dashboard_ping: true
         })
       }).catch(()=>null);
     } catch {}
@@ -1412,6 +1413,7 @@
     const waveScore = Math.max(0, Math.min(100, Number(summary.wave_score || 0)));
     const enabled = trafficPingEnabled();
     const pulse = Math.max(0.18, 1.32 - (waveScore / 100) * 1.02).toFixed(2);
+    const heartbeat = shopify.find(item=>Number(item.window_minutes) === 5) || {};
     const showSessionsReport = !!sessionsReport || !!manualSessionsReport.ok;
     const reportSessions = Number(sessionsReport?.total_sessions || 0);
     const reportVisitors = Number(sessionsReport?.total_online_store_visitors || 0);
@@ -1434,7 +1436,7 @@
           <div>
             <span>Actual Traffic Reader</span>
             <strong>${esc(waveScore)} wave score</strong>
-            <p>Ping button is ${enabled ? 'armed' : 'off'}. When Shopify or SupportRD sends a live wave, this panel pulses faster and can alert you. Bot-returned visitors are tracked separately from regular traffic.</p>
+            <p>Ping button is ${enabled ? 'armed' : 'off'}. Dashboard pings are heartbeat checks only. Real visitors come from Shopify pixel events or campaign links.</p>
           </div>
           <div class="sr-traffic-actions">
             <button class="sr-buy-btn" type="button" data-traffic-ping>${enabled ? 'Ping Armed' : 'Ping Me On Waves'}</button>
@@ -1458,6 +1460,11 @@
             <span>Shopify Pixel</span>
             <strong>${shopify.reduce((sum,item)=>sum + Number(item.events || 0), 0)} events</strong>
             <p>${esc(summary.install_hint || 'Install the custom pixel in Shopify Customer Events.')}</p>
+          </article>
+          <article class="sr-traffic-card">
+            <span>Ping Heartbeat</span>
+            <strong>${esc(heartbeat.dashboard_events || 0)} pings</strong>
+            <p>These keep the live board awake. They are separated from real visitor traffic.</p>
           </article>
           ${showSessionsReport ? `<article class="sr-traffic-card">
             <span>Shopify Sessions Report</span>
@@ -1665,7 +1672,7 @@
       @keyframes srTrafficBang{0%,100%{transform:scale(.92);box-shadow:0 0 0 0 rgba(255,77,92,.42),0 0 30px rgba(255,77,92,.22)}50%{transform:scale(1.08);box-shadow:0 0 0 .72rem rgba(255,77,92,0),0 0 62px rgba(255,210,122,.38)}}
       .sr-traffic-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:.45rem}
       .sr-traffic-actions button{min-height:2.35rem;padding:.55rem .75rem;border-radius:.7rem;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.07);color:#f7fbff;font-weight:1000;cursor:pointer}
-      .sr-traffic-grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:.65rem;margin-top:.85rem}
+      .sr-traffic-grid{display:grid;grid-template-columns:1.15fr 1fr 1fr 1fr;gap:.65rem;margin-top:.85rem}
       .sr-traffic-card{min-height:7.6rem;padding:.78rem;border-radius:.9rem;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.045)}
       .sr-traffic-card.hero{background:linear-gradient(135deg,rgba(97,239,255,.13),rgba(154,254,143,.08));border-color:rgba(97,239,255,.22)}
       .sr-traffic-card span,.sr-traffic-paths span{display:block;color:#61efff;font-size:.68rem;font-weight:1000;text-transform:uppercase}
