@@ -48,6 +48,43 @@ CONNECT_API_TOKEN = (
     or ""
 ).strip()
 CONNECT_API_TIMEOUT_SECONDS = int(os.environ.get("OUTREACH_CONNECT_API_TIMEOUT_SECONDS", "12"))
+CONNECTOR_ENV_ALIASES = {
+    "connect_api": {
+        "url": ["SUPPORTRD_CONNECT_API_URL", "OUTREACH_CONNECT_API_URL", "GLOBALTRACKER_CONNECT_API_URL"],
+        "token": ["SUPPORTRD_CONNECT_API_TOKEN", "OUTREACH_CONNECT_API_TOKEN", "GLOBALTRACKER_CONNECT_API_TOKEN"],
+        "label": "Generic connected submit API",
+    },
+    "social_platform_api": {
+        "url": ["SUPPORTRD_SOCIAL_PLATFORM_API_URL", "SOCIAL_PLATFORM_API_URL", "SUPPORTRD_COMMENT_POST_API_URL"],
+        "token": ["SUPPORTRD_SOCIAL_PLATFORM_API_TOKEN", "SOCIAL_PLATFORM_API_TOKEN", "SUPPORTRD_COMMENT_POST_API_TOKEN"],
+        "label": "Social/comment platform connector",
+    },
+    "publisher_api": {
+        "url": ["SUPPORTRD_PUBLISHER_API_URL", "PUBLISHER_API_URL", "SUPPORTRD_BLOG_POST_API_URL"],
+        "token": ["SUPPORTRD_PUBLISHER_API_TOKEN", "PUBLISHER_API_TOKEN", "SUPPORTRD_BLOG_POST_API_TOKEN"],
+        "label": "Publisher/blog connector",
+    },
+    "email_or_form_api": {
+        "url": ["SUPPORTRD_EMAIL_FORM_API_URL", "EMAIL_OR_FORM_API_URL", "SUPPORTRD_OUTREACH_EMAIL_API_URL"],
+        "token": ["SUPPORTRD_EMAIL_FORM_API_TOKEN", "EMAIL_OR_FORM_API_TOKEN", "SUPPORTRD_OUTREACH_EMAIL_API_TOKEN"],
+        "label": "Email/form outreach connector",
+    },
+    "event_listing_api": {
+        "url": ["SUPPORTRD_EVENT_LISTING_API_URL", "EVENT_LISTING_API_URL"],
+        "token": ["SUPPORTRD_EVENT_LISTING_API_TOKEN", "EVENT_LISTING_API_TOKEN"],
+        "label": "Event/listing connector",
+    },
+    "business_listing_api": {
+        "url": ["SUPPORTRD_BUSINESS_LISTING_API_URL", "BUSINESS_LISTING_API_URL"],
+        "token": ["SUPPORTRD_BUSINESS_LISTING_API_TOKEN", "BUSINESS_LISTING_API_TOKEN"],
+        "label": "Business listing connector",
+    },
+    "wordpress_api": {
+        "url": ["SUPPORTRD_WORDPRESS_API_URL", "WORDPRESS_API_URL"],
+        "token": ["SUPPORTRD_WORDPRESS_API_TOKEN", "WORDPRESS_API_TOKEN"],
+        "label": "WordPress connector",
+    },
+}
 RANDOM_DISCOVERY_TARGETS_ENABLED = os.environ.get("SUPPORTRD_RANDOM_DISCOVERY_TARGETS", "true").strip().lower() != "false"
 RANDOM_DISCOVERY_WINDOW_SECONDS = max(60, int(os.environ.get("SUPPORTRD_RANDOM_DISCOVERY_WINDOW_SECONDS", "300")))
 FOCUS_TERMS = [
@@ -1021,60 +1058,138 @@ def connected_provider_for_target(target):
     return "connect_api"
 
 
+def first_configured_env(names):
+    for name in names:
+        value = (os.environ.get(name) or "").strip()
+        if value:
+            return name, value
+    return "", ""
+
+
+def connector_for_provider(provider):
+    provider = str(provider or "connect_api").strip().lower()
+    if provider == "owned_support_rd":
+        return {
+            "provider": provider,
+            "configured": SUPPORTRD_POSTING_MODE in OWNED_POSTING_MODES,
+            "url": "",
+            "token": "",
+            "mode": "owned_surface",
+            "env_source": "SUPPORTRD_POSTING_MODE",
+            "token_env_source": "",
+            "label": "SupportRD owned feed",
+            "required_env_groups": [["SUPPORTRD_POSTING_MODE=auto_owned"]],
+        }
+    aliases = CONNECTOR_ENV_ALIASES.get(provider, CONNECTOR_ENV_ALIASES["connect_api"])
+    url_env, url = first_configured_env(aliases["url"])
+    token_env, token = first_configured_env(aliases["token"])
+    if url:
+        return {
+            "provider": provider,
+            "configured": True,
+            "url": url,
+            "token": token,
+            "mode": "generic_connect_api_bridge" if provider == "connect_api" else "provider_specific",
+            "env_source": url_env,
+            "token_env_source": token_env,
+            "label": aliases.get("label") or provider,
+            "required_env_groups": [aliases["url"], CONNECTOR_ENV_ALIASES["connect_api"]["url"]],
+        }
+    if CONNECT_API_URL:
+        return {
+            "provider": provider,
+            "configured": True,
+            "url": CONNECT_API_URL,
+            "token": CONNECT_API_TOKEN,
+            "mode": "generic_connect_api_bridge",
+            "env_source": "SUPPORTRD_CONNECT_API_URL",
+            "token_env_source": "SUPPORTRD_CONNECT_API_TOKEN" if CONNECT_API_TOKEN else "",
+            "label": aliases.get("label") or provider,
+            "required_env_groups": [aliases["url"], CONNECTOR_ENV_ALIASES["connect_api"]["url"]],
+        }
+    return {
+        "provider": provider,
+        "configured": False,
+        "url": "",
+        "token": "",
+        "mode": "missing_connect_api_bridge",
+        "env_source": "",
+        "token_env_source": "",
+        "label": aliases.get("label") or provider,
+        "required_env_groups": [aliases["url"], CONNECTOR_ENV_ALIASES["connect_api"]["url"]],
+    }
+
+
+def public_connector_info(provider):
+    connector = connector_for_provider(provider)
+    return {
+        "provider": connector["provider"],
+        "configured": connector["configured"],
+        "mode": connector["mode"],
+        "env_source": connector["env_source"],
+        "token_env_source": connector["token_env_source"],
+        "url_configured": bool(connector["url"]),
+        "token_configured": bool(connector["token"]),
+        "label": connector["label"],
+        "required_env_groups": connector["required_env_groups"],
+    }
+
+
 def connected_channel_status():
     owned_enabled = SUPPORTRD_POSTING_MODE in OWNED_POSTING_MODES
     generic_connected = bool(CONNECT_API_URL)
+
+    def channel(provider, label, scope, action, missing_status="connect_api_required"):
+        connector = public_connector_info(provider)
+        if provider == "owned_support_rd":
+            status = "connected" if owned_enabled else "set_SUPPORTRD_POSTING_MODE_auto_owned"
+        elif connector["configured"]:
+            status = connector["mode"]
+        else:
+            status = missing_status
+        return {
+            "provider": provider,
+            "label": label,
+            "connected": owned_enabled if provider == "owned_support_rd" else connector["configured"],
+            "status": status,
+            "scope": scope,
+            "action": action,
+            "connector": connector,
+        }
+
+    connected_providers = [
+        public_connector_info(provider)
+        for provider in [
+            "connect_api",
+            "social_platform_api",
+            "publisher_api",
+            "email_or_form_api",
+            "event_listing_api",
+            "business_listing_api",
+            "wordpress_api",
+        ]
+    ]
     return {
         "updated_at": utc(),
         "approval_mode": "owner_clicked_connected_submit",
         "connected_api_configured": generic_connected,
         "connect_api_url_configured": generic_connected,
         "connect_api_token_configured": bool(CONNECT_API_TOKEN),
+        "connected_provider_count": len([item for item in connected_providers if item["configured"]]),
+        "provider_connectors": connected_providers,
         "setup_env": [
             "SUPPORTRD_CONNECT_API_URL",
             "SUPPORTRD_CONNECT_API_TOKEN",
         ],
         "channels": [
-            {
-                "provider": "owned_support_rd",
-                "label": "SupportRD owned feed",
-                "connected": owned_enabled,
-                "status": "connected" if owned_enabled else "set_SUPPORTRD_POSTING_MODE_auto_owned",
-                "scope": "FAQ Lounge, Growth Hub, hair-problems, and SupportRD-owned surfaces.",
-                "action": "publish_inside_supportrd",
-            },
-            {
-                "provider": "connect_api",
-                "label": "Generic connected submit API",
-                "connected": generic_connected,
-                "status": "connected" if generic_connected else "missing_connect_api_url",
-                "scope": "Owner-approved handoff to your permitted posting/email/social integration.",
-                "action": "POST approved draft payload to SUPPORTRD_CONNECT_API_URL",
-            },
-            {
-                "provider": "email_or_form_api",
-                "label": "Email/form outreach connector",
-                "connected": generic_connected,
-                "status": "uses_connect_api" if generic_connected else "connect_api_required",
-                "scope": "Salon, hair store, college, career, blog, or publisher outreach that has an allowed form/email route.",
-                "action": "handoff_to_connect_api",
-            },
-            {
-                "provider": "social_platform_api",
-                "label": "Social platform connector",
-                "connected": generic_connected,
-                "status": "uses_connect_api_with_platform_permission" if generic_connected else "official_api_required",
-                "scope": "Only accounts/platforms you own or are authorized to use, through official APIs.",
-                "action": "handoff_to_connect_api",
-            },
-            {
-                "provider": "publisher_api",
-                "label": "Publisher/blog connector",
-                "connected": generic_connected,
-                "status": "uses_connect_api" if generic_connected else "connect_api_required",
-                "scope": "Blog, guest post, featured article, and directory submissions where submission is allowed.",
-                "action": "handoff_to_connect_api",
-            },
+            channel("owned_support_rd", "SupportRD owned feed", "FAQ Lounge, Growth Hub, hair-problems, and SupportRD-owned surfaces.", "publish_inside_supportrd"),
+            channel("connect_api", "Generic connected submit API", "Owner-approved handoff to your permitted posting/email/social integration.", "POST approved draft payload to SUPPORTRD_CONNECT_API_URL", "missing_connect_api_url"),
+            channel("email_or_form_api", "Email/form outreach connector", "Salon, hair store, college, career, blog, or publisher outreach that has an allowed form/email route.", "handoff_to_connect_api"),
+            channel("social_platform_api", "Social/comment platform connector", "Only accounts/platforms you own or are authorized to use, through permitted APIs or the connected webhook.", "handoff_to_connect_api", "connect_api_missing_for_social_platform_api"),
+            channel("publisher_api", "Publisher/blog connector", "Blog, guest post, featured article, and directory submissions where submission is allowed.", "handoff_to_connect_api"),
+            channel("event_listing_api", "Event/listing connector", "Community event posts and allowed listing submissions.", "handoff_to_connect_api"),
+            channel("business_listing_api", "Business listing connector", "Business directory, salon, store, and local listing routes where submission is allowed.", "handoff_to_connect_api"),
+            channel("wordpress_api", "WordPress connector", "WordPress-owned or approved contributor routes.", "handoff_to_connect_api"),
         ],
         "safety": "Connected API means owner-approved submit handoff. It is not a bypass for platforms that block automation or require account/app approval.",
     }
@@ -1207,11 +1322,15 @@ def submit_through_connected_api(payload):
             "draft": draft,
             "response": response,
         }
-    if not CONNECT_API_URL:
+    connector = connector_for_provider(provider)
+    if not connector["configured"]:
         response = {
-            "message": "Connected API URL is not configured yet.",
+            "message": f"{connector['label']} is not configured yet. Add a provider-specific connector or the generic SUPPORTRD_CONNECT_API_URL bridge.",
             "needed_env": ["SUPPORTRD_CONNECT_API_URL", "SUPPORTRD_CONNECT_API_TOKEN"],
+            "required_any_of": connector["required_env_groups"],
             "provider_needed": provider,
+            "bridge_provider": "connect_api",
+            "connector": public_connector_info(provider),
         }
         submission_id = insert_submission(source_type, source_id, provider, target, draft, "connect_api_missing", response)
         log_event("connected_submit_missing_api", {"id": submission_id, "source_id": source_id, "provider": provider})
@@ -1234,13 +1353,19 @@ def submit_through_connected_api(payload):
         "target": target,
         "draft": draft,
         "movement": movement,
+        "connector": {
+            "provider": provider,
+            "mode": connector["mode"],
+            "env_source": connector["env_source"],
+            "token_configured": bool(connector["token"]),
+        },
         "safety": "Owner clicked approve-through-connected-API. The receiving connector must obey platform rules and only use permitted accounts/APIs.",
     }
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
-    if CONNECT_API_TOKEN:
-        headers["Authorization"] = f"Bearer {CONNECT_API_TOKEN}"
+    if connector["token"]:
+        headers["Authorization"] = f"Bearer {connector['token']}"
     req = urllib.request.Request(
-        CONNECT_API_URL,
+        connector["url"],
         data=json.dumps(handoff).encode("utf-8"),
         headers=headers,
         method="POST",

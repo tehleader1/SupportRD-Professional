@@ -14,6 +14,9 @@
   const OUTREACH_CONNECT_STATUS_ENDPOINT = '/api/outreach/connect/status';
   const OUTREACH_CONNECT_SUBMIT_ENDPOINT = '/api/outreach/connect/submit';
   const OUTREACH_OWNER_TOKEN_KEY = 'srOutreachOwnerToken';
+  const OUTREACH_AUTO_APPROVE_KEY = 'srOutreachAutoApproveConnected';
+  const OUTREACH_AUTO_APPROVE_MS = 45 * 1000;
+  const OUTREACH_AUTO_APPROVE_HISTORY_LIMIT = 80;
   const LIVE_SUPPORT_RD_ORIGIN = 'https://supportrd.com';
   const IS_LOCAL_PREVIEW = ['127.0.0.1', 'localhost', '::1'].includes(window.location.hostname || '');
   const TRAFFIC_ORIGIN = IS_LOCAL_PREVIEW ? LIVE_SUPPORT_RD_ORIGIN : '';
@@ -88,6 +91,43 @@
     } catch {
       return false;
     }
+  }
+
+  function autoApproveEnabled(){
+    try { return localStorage.getItem(OUTREACH_AUTO_APPROVE_KEY) === '1'; }
+    catch { return false; }
+  }
+
+  function writeAutoApproveStatus(status){
+    const state = read();
+    const next = {
+      ...state,
+      outreachAutoApproveStatus: {
+        ...(state.outreachAutoApproveStatus || {}),
+        ...status,
+        at: new Date().toISOString()
+      }
+    };
+    write(next);
+    if (document.querySelector('[data-panel="globaltracker"]')) root.renderFunctionalPanel?.('globaltracker');
+    return next;
+  }
+
+  function setAutoApproveEnabled(enabled){
+    try {
+      if (enabled) localStorage.setItem(OUTREACH_AUTO_APPROVE_KEY, '1');
+      else localStorage.removeItem(OUTREACH_AUTO_APPROVE_KEY);
+    } catch {}
+    writeAutoApproveStatus({
+      ok: !!enabled,
+      status: enabled ? 'auto_approve_enabled' : 'auto_approve_paused',
+      title: enabled ? 'Auto-click approval is live' : 'Auto-click approval is paused'
+    });
+    if (enabled) setTimeout(()=>runAutoApproveTick(), 250);
+  }
+
+  function toggleAutoApprove(){
+    setAutoApproveEnabled(!autoApproveEnabled());
   }
 
   async function postOutreachAdmin(url, body){
@@ -308,9 +348,9 @@
     }
   }
 
-  async function publishOwnedPost(){
+  async function publishOwnedPost(item){
     const state = read();
-    const active = currentMovement(state);
+    const active = item || currentMovement(state);
     const payload = {
       title: active.title || 'SupportRD growth update',
       message: fullDraftFor(active),
@@ -390,8 +430,20 @@
   async function submitThroughConnectedAPI(item){
     const active = item || currentMovement(read());
     const site = websiteTargetFor(active);
+    const provider = connectedProviderForSite(site);
+    write({
+      ...read(),
+      outreachConnectSubmitResult: {
+        ok:false,
+        status: isOwnedSupportRDSurface(site) ? 'publishing_owned_surface' : 'submitting_to_connected_api',
+        provider,
+        title: active.title || 'SupportRD connected submission',
+        at: new Date().toISOString()
+      }
+    });
+    if (document.querySelector('[data-panel="globaltracker"]')) root.renderFunctionalPanel?.('globaltracker');
     if (isOwnedSupportRDSurface(site)) {
-      const ownedResult = await publishOwnedPost();
+      const ownedResult = await publishOwnedPost(active);
       const next = {
         ...read(),
         outreachConnectSubmitResult: {
@@ -410,7 +462,7 @@
     const body = {
       id: active.id || '',
       key: active.key || '',
-      provider: site.connected_provider || '',
+      provider: site.connected_provider || provider || '',
       title: active.title || '',
       website_target: site
     };
@@ -442,7 +494,7 @@
         outreachConnectSubmitResult: {
           ok:false,
           status:'connected_submit_failed',
-          provider: site.connected_provider || 'connect_api',
+          provider: site.connected_provider || provider || 'connect_api',
           title: active.title || 'SupportRD connected submission',
           at: new Date().toISOString()
         }
@@ -451,6 +503,48 @@
       if (document.querySelector('[data-panel="globaltracker"]')) root.renderFunctionalPanel?.('globaltracker');
       return null;
     }
+  }
+
+  async function runAutoApproveTick(){
+    if (!autoApproveEnabled()) return null;
+    const state = read();
+    if (!outreachOwnerToken()) {
+      writeAutoApproveStatus({
+        ok:false,
+        status:'owner_token_needed',
+        title:'Set outreach admin token before auto-click approval',
+        provider:'connect_api'
+      });
+      return null;
+    }
+    const movements = Array.isArray(state.outreachMovements) ? state.outreachMovements : [];
+    const start = Math.max(0, Number(state.outreachActiveIndex || 0));
+    const ordered = movements.length
+      ? movements.slice(start).concat(movements.slice(0, start))
+      : [currentMovement(state)];
+    const candidate = ordered.find(item=>isAutoApproveEligible(item, state));
+    if (!candidate) {
+      writeAutoApproveStatus({
+        ok:false,
+        status:'waiting_for_connected_ready_target',
+        title:'Auto-click approval is watching',
+        provider:'connect_api'
+      });
+      return null;
+    }
+    const fingerprint = autoApproveFingerprint(candidate);
+    const info = connectedApprovalInfoFor(candidate);
+    writeAutoApproveStatus({
+      ok:false,
+      status:'auto_clicking_green_approval',
+      title: candidate.title || candidate.category || 'SupportRD movement',
+      provider: info.provider,
+      domain: info.site.domain || info.site.label || ''
+    });
+    const result = await submitThroughConnectedAPI(candidate);
+    recordAutoApproval(candidate, result || {}, fingerprint);
+    refreshConnectedSubmitStatus();
+    return result;
   }
 
   function trafficClientId(){
@@ -1054,6 +1148,89 @@
       || { provider, connected:false, status:'connect_api_required', label:'Connected API', scope:'Connect API required.' };
   }
 
+  function connectedMissingText(provider, channel){
+    const label = channel?.label || provider || 'Connected API';
+    if (provider === 'social_platform_api') {
+      return `Missing webhook bridge for Social/comment platform. Set SUPPORTRD_CONNECT_API_URL or SUPPORTRD_SOCIAL_PLATFORM_API_URL.`;
+    }
+    return `Missing webhook bridge for ${label}. Set SUPPORTRD_CONNECT_API_URL or a provider-specific API URL.`;
+  }
+
+  function connectedResultText(result, provider, channel){
+    if (!result?.status) return '';
+    if (result.status === 'connect_api_missing') {
+      const needed = result.provider || provider || 'connect_api';
+      return `connect_api_missing for ${needed}`;
+    }
+    return `${result.status} · ${result.provider || provider || channel?.provider || 'connect_api'}`;
+  }
+
+  function connectedApprovalInfoFor(item){
+    const site = websiteTargetFor(item);
+    const provider = connectedProviderForSite(site);
+    const channel = connectedChannelForProvider(provider);
+    const owned = isOwnedSupportRDSurface(site);
+    return {
+      site,
+      provider,
+      channel,
+      owned,
+      ready: owned || !!channel.connected
+    };
+  }
+
+  function autoApproveFingerprint(item){
+    const info = connectedApprovalInfoFor(item);
+    const windowId = Number(info.site.random_window_seconds || 0)
+      ? Math.floor(Date.now() / (Number(info.site.random_window_seconds || 1) * 1000))
+      : '';
+    return [
+      item?.id || item?.key || item?.title || item?.category || 'movement',
+      info.site.domain || info.site.label || 'target',
+      info.site.campaign || info.site.tracking_url || '',
+      info.site.found_at || windowId || ''
+    ].join('|');
+  }
+
+  function autoApprovedFingerprints(state){
+    const raw = Array.isArray(state.outreachAutoApprovedKeys) ? state.outreachAutoApprovedKeys : [];
+    return raw.map(item=>typeof item === 'string' ? item : item?.fingerprint).filter(Boolean);
+  }
+
+  function isAutoApproveEligible(item, state){
+    if (!item) return false;
+    const info = connectedApprovalInfoFor(item);
+    if (!info.ready) return false;
+    const status = String(item.status || info.site.status || '').toLowerCase();
+    if (status.includes('reject') || status.includes('block') || status.includes('failed')) return false;
+    return !autoApprovedFingerprints(state).includes(autoApproveFingerprint(item));
+  }
+
+  function recordAutoApproval(item, result, fingerprint){
+    const state = read();
+    const info = connectedApprovalInfoFor(item);
+    const entry = {
+      fingerprint,
+      ok: !!result?.ok,
+      status: result?.status || result?.error || 'submitted_to_connected_api',
+      provider: result?.provider || info.provider,
+      title: item?.title || item?.category || 'SupportRD movement',
+      domain: info.site.domain || info.site.label || 'supportrd.com',
+      at: new Date().toISOString()
+    };
+    const history = [entry, ...((state.outreachAutoApproveHistory || []).filter(row=>row?.fingerprint !== fingerprint))]
+      .slice(0, OUTREACH_AUTO_APPROVE_HISTORY_LIMIT);
+    write({
+      ...state,
+      outreachAutoApprovedKeys: history.map(row=>row.fingerprint).filter(Boolean),
+      outreachAutoApproveHistory: history,
+      outreachAutoApproveLastResult: entry,
+      outreachAutoApproveCount: Number(state.outreachAutoApproveCount || 0) + 1,
+      outreachAutoApproveStatus: entry
+    });
+    if (document.querySelector('[data-panel="globaltracker"]')) root.renderFunctionalPanel?.('globaltracker');
+  }
+
   function renderWebsiteEntryBoard(state, active){
     const movements = Array.isArray(state.outreachMovements) ? state.outreachMovements : [];
     const rows = (movements.length ? movements : [active]).slice(0, 16).map((item, index)=>({
@@ -1066,6 +1243,10 @@
     const provider = connectedProviderForSite(current);
     const channel = connectedChannelForProvider(provider);
     const submitResult = state.outreachConnectSubmitResult || {};
+    const autoOn = autoApproveEnabled();
+    const autoStatus = state.outreachAutoApproveStatus || state.outreachAutoApproveLastResult || {};
+    const autoCount = Number(state.outreachAutoApproveCount || 0);
+    const autoLast = state.outreachAutoApproveLastResult || {};
     return `
       <section class="sr-global-band sr-bot-websites">
         <div class="sr-global-band-head">
@@ -1085,12 +1266,19 @@
           <div>
             <span>Connected API Approval</span>
             <strong>${esc(channel.connected || currentOwned ? 'Ready for owner-approved submit' : 'Connect API needed')}</strong>
-            <p>${esc(currentOwned ? 'This one is owned by SupportRD, so approving can publish internally.' : (channel.connected ? `This exact random target will hand off through ${channel.label || provider}.` : 'The random target and comment are approved-ready, but an API/webhook connection is needed before outside submission.'))}</p>
+            <p>${esc(currentOwned ? 'This one is owned by SupportRD, so approving can publish internally.' : (channel.connected ? `This exact random target will hand off through ${channel.label || provider}.` : connectedMissingText(provider, channel)))}</p>
             <small>${esc(provider)} · ${esc(channel.status || 'status pending')}</small>
           </div>
           <button type="button" data-connected-submit>${currentOwned ? 'Publish Owned' : 'Approve Through Connected API'}</button>
+          <button type="button" class="${autoOn ? 'active' : ''}" data-connected-auto-approve>${autoOn ? 'Auto-Click On' : 'Auto-Click Approval'}</button>
           <button type="button" data-connected-refresh>Refresh API</button>
-          ${submitResult.status ? `<b class="${submitResult.ok ? 'ok' : 'warn'}">${esc(submitResult.status)} · ${esc(submitResult.provider || provider)}</b>` : ''}
+          ${submitResult.status ? `<b class="${submitResult.ok ? 'ok' : 'warn'}">${esc(connectedResultText(submitResult, provider, channel))}</b>` : ''}
+          <small class="sr-auto-approve-status">
+            ${esc(autoOn ? `Auto sends 1 ready target every ${Math.round(OUTREACH_AUTO_APPROVE_MS / 1000)}s` : 'Auto approval paused')}
+            · ${esc(autoCount)} sent
+            ${autoStatus.status ? ` · ${esc(autoStatus.status)}` : ''}
+            ${autoLast.domain ? ` · ${esc(autoLast.domain)}` : ''}
+          </small>
         </div>
         <div class="sr-bot-site-grid">
           ${rows.map(({item, site, active: isActive})=>{
@@ -2319,6 +2507,9 @@
       .sr-connect-submit-rail p,.sr-connect-submit-rail small{color:rgba(247,251,255,.72);line-height:1.32}
       .sr-connect-submit-rail button{min-height:2.35rem;padding:.5rem .75rem;border-radius:.65rem;border:1px solid rgba(97,239,255,.24);background:rgba(97,239,255,.13);color:#dffbff;font-weight:1000;cursor:pointer;white-space:nowrap}
       .sr-connect-submit-rail button:first-of-type{background:#9afe8f;color:#07101d;border-color:#9afe8f}
+      .sr-connect-submit-rail button.active{background:linear-gradient(135deg,#9afe8f,#61efff);color:#07101d;border-color:#9afe8f;box-shadow:0 0 0 1px rgba(154,254,143,.22),0 0 22px rgba(154,254,143,.38);animation:srAutoApprovePulse 1.15s ease-in-out infinite}
+      .sr-connect-submit-rail .sr-auto-approve-status{grid-column:1/-1;display:block;padding:.48rem .6rem;border-radius:.62rem;border:1px solid rgba(154,254,143,.18);background:rgba(154,254,143,.08);color:#dffbff;font-weight:900}
+      @keyframes srAutoApprovePulse{50%{filter:brightness(1.12);transform:translateY(-1px);box-shadow:0 0 0 1px rgba(154,254,143,.32),0 0 34px rgba(154,254,143,.5)}}
       .sr-connect-submit-rail>b{display:block;padding:.48rem .58rem;border-radius:.62rem;border:1px solid rgba(255,255,255,.12);font-size:.7rem;line-height:1.2;text-transform:uppercase;letter-spacing:.04em}
       .sr-connect-submit-rail>b.ok{color:#eaffdf;background:rgba(154,254,143,.12);border-color:rgba(154,254,143,.3)}
       .sr-connect-submit-rail>b.warn{color:#ffe4a6;background:rgba(255,210,122,.1);border-color:rgba(255,210,122,.26)}
@@ -2366,6 +2557,10 @@
       if (event.target.closest('[data-connected-submit]')) {
         event.preventDefault();
         submitThroughConnectedAPI();
+      }
+      if (event.target.closest('[data-connected-auto-approve]')) {
+        event.preventDefault();
+        toggleAutoApprove();
       }
       if (event.target.closest('[data-connected-refresh]')) {
         event.preventDefault();
@@ -2447,6 +2642,9 @@
     root.__globalOwnedPostsTimer = setInterval(refreshOwnedPosts, BOT_FETCH_MS);
     if (root.__globalConnectStatusTimer) clearInterval(root.__globalConnectStatusTimer);
     root.__globalConnectStatusTimer = setInterval(refreshConnectedSubmitStatus, BOT_FETCH_MS);
+    if (root.__globalAutoApproveTimer) clearInterval(root.__globalAutoApproveTimer);
+    root.__globalAutoApproveTimer = setInterval(runAutoApproveTick, OUTREACH_AUTO_APPROVE_MS);
+    if (autoApproveEnabled()) setTimeout(()=>runAutoApproveTick(), 1500);
     if (root.__globalTrafficTimer) clearInterval(root.__globalTrafficTimer);
     root.__globalTrafficTimer = setInterval(()=>refreshTrafficSummary(trafficPingEnabled()), TRAFFIC_FETCH_MS);
   }
@@ -2458,6 +2656,8 @@
   root.publishOwnedPost = publishOwnedPost;
   root.refreshConnectedSubmitStatus = refreshConnectedSubmitStatus;
   root.submitThroughConnectedAPI = submitThroughConnectedAPI;
+  root.runOutreachAutoApproveTick = runAutoApproveTick;
+  root.toggleOutreachAutoApprove = toggleAutoApprove;
   root.refreshTrafficSummary = refreshTrafficSummary;
   root.initGlobalSweep = initGlobalSweep;
 })();
