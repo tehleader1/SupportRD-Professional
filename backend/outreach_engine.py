@@ -98,6 +98,14 @@ FOCUS_TERMS = [
     "letter",
     "post",
     "community",
+    "bulk",
+    "vendor",
+    "shampoo",
+    "salon vendor",
+    "santiago",
+    "dominican",
+    "investor",
+    "lasersmarket",
     "career",
     "college",
     "social video",
@@ -111,6 +119,21 @@ SUPPORT_RD_PROMO_HOOKS = [
     "Exclusive suburbs Hair AI",
     "Linked Dominican Republic product",
 ]
+SUPPORTRD_BULK_VENDOR_ROUTES = [
+    "Santiago Dominican Republic: shampoo distributors, beauty supply vendors, salon owners, and resale partners",
+    "International salon vendor lane: Caribbean, Latin America, US diaspora salons, beauty supply stores, and shampoo vendors",
+    "Bulk-first offer: vendor restock, salon resale, client after-care bundles, and product education QR routing",
+]
+SUPPORTRD_WEBSITE_HEALTH_WATCH = [
+    "Traffic quality: separate real salon/vendor leads from bot traffic, spam form bursts, and scraper visits",
+    "Account safety: no third-party posting unless a permitted connector or owner account is approved",
+    "Site integrity: watch for broken checkout/product links, strange redirects, copied pages, and missing images",
+    "Security watch: flag suspicious login patterns, unknown webhook payloads, fake payment requests, and API token gaps",
+]
+LASERSMARKET_PREMIUM_SIGNAL_ROUTE = (
+    "LasersMarket Premium $25,000 signal review: direct calls welcome at 980-230-6202 for local stock, "
+    "forex, crypto, and options investors; research-only, no guaranteed returns, no auto-trading."
+)
 
 SEO_GUIDELINE_FOCUS = "google_microsoft_health_hair_care"
 SEO_GUIDELINE_SOURCES = [
@@ -189,6 +212,9 @@ SEEDS = [
     {"category": "guest post", "title": "Dry hair and breakage guide", "target": "hair care blogs and local business blogs", "hook": "How SupportRD routes hair concerns to product guidance and real support"},
     {"category": "salon outreach", "title": "Salon partnership email", "target": "salons and stylists", "hook": "ARIA hair prep plus Shopify catalog for clients"},
     {"category": "hair store outreach", "title": "Beauty supply partnership", "target": "hair stores", "hook": "SupportRD product line and AI hair guidance"},
+    {"category": "bulk shampoo vendor outreach", "title": "Santiago shampoo vendor bulk route", "target": "shampoo vendors, beauty supply distributors, and hair salon vendors around Santiago Dominican Republic", "hook": "SupportRD bulk shampoo/catalog route for salon resale, vendor restock, and client after-care bundles"},
+    {"category": "international salon vendor outreach", "title": "International salon vendor bulk route", "target": "hair salon vendors and shampoo distributors internationally", "hook": "Bulk SupportRD product education, vendor restock, and salon client support for Caribbean, Latin America, US, and diaspora markets"},
+    {"category": "market investor call route", "title": "LasersMarket premium signal review call", "target": "local stock, forex, crypto, and options investors", "hook": LASERSMARKET_PREMIUM_SIGNAL_ROUTE},
     {"category": "video post idea", "title": "10-second hair damage short", "target": "TikTok, YouTube Shorts, and Instagram Reels style content", "hook": "How to fix dry damaged hair before it gets worse"},
     {"category": "personal story", "title": "Personal SupportRD family story", "target": "approved personal accounts only", "hook": "Why SupportRD was built for real hair problems"},
     {"category": "social comment draft", "title": "Helpful hair solution comment", "target": "approved social replies only", "hook": "Short value-first reply that links only when welcome"},
@@ -205,6 +231,10 @@ EXPANSION_SEEDS = [
     {"category": "directory listing request", "title": "Beauty directory listing request", "target": "salon, beauty supply, and natural hair directories", "hook": "List SupportRD as a natural-hair solutions and product guidance website"},
     {"category": "salon partner request", "title": "Salon client resource pitch", "target": "independent salons and stylists", "hook": "Give salon clients a Profile scan, ARIA guidance, and Shopify product follow-up path"},
     {"category": "hair store partner request", "title": "Beauty supply counter card pitch", "target": "beauty supply stores", "hook": "Use SupportRD as a product education QR route for dry hair and breakage shoppers"},
+    {"category": "bulk shampoo vendor request", "title": "Santiago bulk shampoo vendor request", "target": "Santiago Dominican Republic shampoo vendors, distributors, salon suppliers, and beauty supply counters", "hook": "Offer SupportRD bulk restock and product-education bundles for salon resale and client after-care"},
+    {"category": "santiago salon vendor request", "title": "Santiago salon vendor route", "target": "hair salons, stylists, and salon supply vendors in Santiago Dominican Republic", "hook": "SupportRD bulk product route with ARIA/Profile education for Dominican Republic salon clients"},
+    {"category": "international shampoo distributor request", "title": "International shampoo distributor route", "target": "Caribbean, Latin America, US, and international shampoo distributors and salon vendors", "hook": "SupportRD bulk vendor restock, resale, and client-support route"},
+    {"category": "premium signal route draft", "title": "LasersMarket premium signal review call", "target": "local stock, forex, crypto, and options investors", "hook": LASERSMARKET_PREMIUM_SIGNAL_ROUTE},
     {"category": "creator collab request", "title": "Natural hair creator review pitch", "target": "YouTube, TikTok, and Instagram hair creators", "hook": "Invite creators to review ARIA, Profile Hair Prep, and the product catalog"},
     {"category": "student ad request", "title": "Campus career hair confidence ad", "target": "community college career centers and student bulletin boards", "hook": "Get your hair right before interviews, school, and work"},
     {"category": "radio PSA request", "title": "Community radio shoutout request", "target": "community radio and small podcast shows", "hook": "SupportRD.com - Suave Natural Hair Solution - Caribbean Hair Solutions"},
@@ -310,6 +340,20 @@ ATTENTION_LANES = [
         "description": "Beauty supply, hair store, salon, stylist pages, and approved store/salon comments.",
         "keywords": ["hair store", "salon", "beauty supply", "stylist"],
         "diversify_targets": ["beauty supply pages", "stylist posts", "salon after-care pages", "product education posts"],
+    },
+    {
+        "id": "vendor_bulk",
+        "label": "Bulk shampoo / salon vendor",
+        "description": "Bulk shampoo vendors, salon suppliers, beauty supply distributors, and Santiago Dominican Republic vendor routes.",
+        "keywords": ["bulk", "vendor", "shampoo", "santiago", "dominican", "distributor", "salon supplier", "beauty supply"],
+        "diversify_targets": ["Santiago salon vendors", "Dominican Republic distributors", "international shampoo vendors", "salon resale partners"],
+    },
+    {
+        "id": "market_investor",
+        "label": "LasersMarket premium investor call",
+        "description": "Local stock, forex, crypto, and options investor lead route for LasersMarket premium signal review calls.",
+        "keywords": ["lasersmarket", "premium signal", "investor", "forex", "crypto", "options", "stock", "signals"],
+        "diversify_targets": ["local investor meetups", "trading education groups", "crypto communities", "options scanner leads"],
     },
     {
         "id": "family_community",
@@ -737,6 +781,29 @@ def traffic_instruction_for_bot(traffic_math):
     return "Use traffic math as the bot baseline and update copy after each live wave."
 
 
+def dojj_website_health_payload():
+    return {
+        "name": "SupportRD Dojj traffic + website health",
+        "bot": "separate_supportrd_outreach_bot",
+        "bulk_treatment": SUPPORTRD_BULK_VENDOR_ROUTES,
+        "premium_cross_route": LASERSMARKET_PREMIUM_SIGNAL_ROUTE,
+        "website_health": SUPPORTRD_WEBSITE_HEALTH_WATCH,
+        "hacker_watch_status": "watch_and_flag",
+        "blocked_without_owner": [
+            "external account posting",
+            "third-party form submission",
+            "unknown webhook payload execution",
+            "wallet/payment request",
+            "API token exposure",
+        ],
+        "dojj_instruction": (
+            "Push traffic into approved vendor leads, track lead source and buyer type, "
+            "watch suspicious site behavior, and log every result into Dojj."
+        ),
+        "updated_at": utc(),
+    }
+
+
 def swarm_traffic_view_for(worker, traffic_math):
     traffic_math = traffic_math or {}
     arrival = traffic_math.get("arrival_estimate") or {}
@@ -869,7 +936,19 @@ def copy_for(item):
         "people-first help, truthful product guidance, no diagnosis or cure promises, no keyword stuffing, "
         "and no fake authority."
     )
-    if ("salon" in cat or "hair store" in cat) and "comment" not in cat and "post" not in cat:
+    if any(term in cat for term in ["bulk shampoo", "salon vendor", "shampoo vendor", "distributor"]):
+        message = (
+            "Bulk vendor outreach draft: SupportRD is preparing shampoo/vendor and salon resale routes "
+            "for Santiago Dominican Republic, international salon vendors, beauty supply distributors, and hair-care resellers. "
+            "The offer is bulk restock, client after-care bundles, product education QR routing, and owner-reviewed follow-up. "
+            f"Approved vendor proof route: {public_link}"
+        )
+    elif "lasersmarket" in cat or "premium signal" in cat or "investor" in cat:
+        message = (
+            f"{LASERSMARKET_PREMIUM_SIGNAL_ROUTE} Keep this as a compliant call-review lane: no guaranteed returns, "
+            "no personalized financial advice, no automatic trades, and no private-stock claims."
+        )
+    elif ("salon" in cat or "hair store" in cat) and "comment" not in cat and "post" not in cat:
         message = (
             "Hello, I am preparing partnership outreach for SupportRD Caribbean Hair Solutions. "
             "SupportRD helps people with natural-hair concerns using ARIA guidance, Profile Hair Prep, and a Shopify product catalog. "
@@ -964,6 +1043,17 @@ def copy_for(item):
 
 
 BASE_SCORE_TERMS = [
+    ("santiago", 22),
+    ("dominican", 20),
+    ("shampoo vendor", 22),
+    ("salon vendor", 20),
+    ("bulk", 18),
+    ("vendor", 16),
+    ("lasersmarket", 18),
+    ("investor", 14),
+    ("forex", 10),
+    ("crypto", 10),
+    ("options", 10),
     ("salon", 18),
     ("hair store", 18),
     ("college", 14),
@@ -1142,6 +1232,18 @@ def followup_intent_for(item, context=""):
             "tone": "clear and non-pushy",
             "strategy": "Explain the hair concern, point to product guidance, and avoid pressure.",
         }
+    if any(term in text for term in ["bulk", "vendor", "shampoo", "santiago", "dominican", "distributor"]):
+        return {
+            "intent": "bulk_vendor_route",
+            "tone": "professional, bilingual-friendly, and direct",
+            "strategy": "Lead with bulk restock, salon resale, client after-care bundles, and Santiago/international vendor fit.",
+        }
+    if any(term in text for term in ["lasersmarket", "investor", "forex", "crypto", "options", "stock"]):
+        return {
+            "intent": "premium_signal_call_route",
+            "tone": "careful and compliance-first",
+            "strategy": "Invite a direct research-review call while avoiding guaranteed returns, personal financial advice, and auto-trading claims.",
+        }
     if any(term in text for term in ["family", "parent", "student", "college", "career", "work"]):
         return {
             "intent": "family_career_support",
@@ -1175,6 +1277,14 @@ def followup_draft_for(item, context=""):
         opening = "That makes sense. A simple first step is to look at what the hair is doing before adding more products."
         value = "For dryness or breakage, SupportRD can lead with New Hair AI!, the New Hair Scanner, and New Hair Analysis so the person gets a real read before choosing products."
         cta = f"If helpful links are welcome here, SupportRD can help check the concern and choose a route: {public_link}"
+    elif any(term in category for term in ["bulk", "vendor", "shampoo", "santiago", "dominican", "distributor"]):
+        opening = "I am preparing a bulk SupportRD vendor route for shampoo suppliers, salon vendors, beauty supply distributors, and resale partners."
+        value = "The priority is Santiago Dominican Republic first, then international salon/vendor channels that can move product through restock, resale, client after-care bundles, and product education."
+        cta = f"If this is approved for outreach, send the vendor to {public_link} and log the buyer type, case quantity, delivery lane, and follow-up owner."
+    elif "lasersmarket" in category or "premium signal" in category or "investor" in category:
+        opening = "LasersMarket premium signal review is a direct-call research lane, not a guarantee or an auto-trade system."
+        value = "The route can speak to local stock, forex, crypto, and options investors while keeping the claim clean: educational scanner, owner review, direct call, and no guaranteed returns."
+        cta = "If approved, route the call to 980-230-6202 and log the market, risk question, budget boundary, and follow-up result."
     elif "story" in category or "letter" in category or "family" in category:
         opening = "I built SupportRD around real family moments where people need hair help before school, work, events, or a big next step."
         value = "The point is not to overwhelm people; it is to give them a clear place to ask, scan, learn, and choose what fits, including New Hair AI Premiums and the linked Dominican Republic product path when it matches their concern."
@@ -1286,6 +1396,8 @@ def find_item_for_followup(payload):
 def placement_lane_for(item):
     text = json.dumps(item, sort_keys=True).lower()
     priority = [
+        "vendor_bulk",
+        "market_investor",
         "community_college",
         "featured_blog",
         "social_video",
@@ -1422,6 +1534,16 @@ WEBSITE_TARGETS = {
         {"label": "Google Business", "domain": "google.com/business", "url": "https://www.google.com/business/", "purpose": "Business listing/review research route, no fake reviews."},
         {"label": "SupportRD Catalog", "domain": "shop.supportrd.com", "url": "https://shop.supportrd.com/", "purpose": "Owned product education and catalog route."},
     ],
+    "vendor_bulk": [
+        {"label": "Santiago vendor search", "domain": "google.com", "url": "https://www.google.com/search?q=shampoo+vendors+Santiago+Dominican+Republic", "purpose": "Find Santiago shampoo vendors, beauty supply distributors, salon suppliers, and bulk restock partners."},
+        {"label": "Dominican salon supplier search", "domain": "google.com", "url": "https://www.google.com/search?q=salon+supplier+Santiago+Republica+Dominicana", "purpose": "International Spanish/English vendor discovery for owner-reviewed outreach."},
+        {"label": "SupportRD bulk catalog", "domain": "supportrd.com", "url": f"{SUPPORT_URL}/growth-hub", "purpose": "Owned vendor proof route for bulk shampoo, salon resale, and client after-care packages."},
+    ],
+    "market_investor": [
+        {"label": "LasersMarket premium scanner", "domain": "lasersmarket.com", "url": "https://lasersmarket.com/#lmOptionsScenarioPanel", "purpose": "Research-only premium signal review lane; direct calls welcome, no guaranteed returns."},
+        {"label": "Local investor event search", "domain": "google.com", "url": "https://www.google.com/search?q=Charlotte+stock+forex+crypto+options+investor+meetup", "purpose": "Local investor attention research for compliant owner-reviewed calls."},
+        {"label": "LinkedIn investor route", "domain": "linkedin.com", "url": "https://www.linkedin.com/", "purpose": "Manual professional-network outreach for investors; no spam, no guaranteed performance claims."},
+    ],
     "family_community": [
         {"label": "Nextdoor", "domain": "nextdoor.com", "url": "https://nextdoor.com/", "purpose": "Local/community post draft route with owner approval."},
         {"label": "Eventbrite", "domain": "eventbrite.com", "url": "https://www.eventbrite.com/", "purpose": "Community event and vendor-board research route."},
@@ -1476,6 +1598,18 @@ RANDOM_DISCOVERY_TARGETS = {
         {"label": "Google Business Search", "domain": "google.com/business", "url": "https://www.google.com/search?q=natural+hair+salon+Charlotte+NC", "purpose": "Salon/store discovery route, no fake reviews.", "search_query": "natural hair salon Charlotte NC"},
         {"label": "StyleSeat", "domain": "styleseat.com", "url": "https://www.styleseat.com/", "purpose": "Stylist discovery and after-care outreach research route.", "search_query": "natural hair stylist aftercare"},
         {"label": "SupportRD Catalog", "domain": "shop.supportrd.com", "url": "https://shop.supportrd.com/", "purpose": "Owned product education and catalog route.", "search_query": "SupportRD product education"},
+    ],
+    "vendor_bulk": [
+        {"label": "Santiago shampoo vendors", "domain": "google.com", "url": "https://www.google.com/search?q=shampoo+vendors+Santiago+Dominican+Republic", "purpose": "Bulk shampoo vendor discovery around Santiago Dominican Republic.", "search_query": "shampoo vendors Santiago Dominican Republic"},
+        {"label": "Dominican beauty supply distributors", "domain": "google.com", "url": "https://www.google.com/search?q=beauty+supply+distributor+Santiago+Republica+Dominicana", "purpose": "Beauty supply and distributor discovery for bulk SupportRD route.", "search_query": "beauty supply distributor Santiago Republica Dominicana"},
+        {"label": "Facebook vendor group search", "domain": "facebook.com", "url": "https://www.facebook.com/search/groups/?q=salon%20Santiago%20Republica%20Dominicana", "purpose": "Manual group discovery only; no account action without approval.", "search_query": "salon vendor Santiago Dominican Republic group"},
+        {"label": "SupportRD bulk proof", "domain": "supportrd.com", "url": f"{SUPPORT_URL}/growth-hub", "purpose": "Owned vendor proof route.", "search_query": "SupportRD bulk salon vendor"},
+    ],
+    "market_investor": [
+        {"label": "LasersMarket premium scanner", "domain": "lasersmarket.com", "url": "https://lasersmarket.com/#lmOptionsScenarioPanel", "purpose": "Premium signal review call route; research-only and owner-reviewed.", "search_query": "LasersMarket premium signal review"},
+        {"label": "Charlotte investor meetup search", "domain": "google.com", "url": "https://www.google.com/search?q=Charlotte+stock+forex+crypto+options+investor+meetup", "purpose": "Local investor audience discovery for direct calls.", "search_query": "Charlotte stock forex crypto options investor meetup"},
+        {"label": "Eventbrite investor events", "domain": "eventbrite.com", "url": "https://www.eventbrite.com/d/nc--charlotte/investing/", "purpose": "Local investing event research.", "search_query": "Charlotte investing event"},
+        {"label": "LinkedIn investor route", "domain": "linkedin.com", "url": "https://www.linkedin.com/", "purpose": "Professional manual outreach only, no performance promises.", "search_query": "local options traders investors"},
     ],
     "family_community": [
         {"label": "Nextdoor", "domain": "nextdoor.com", "url": "https://nextdoor.com/", "purpose": "Local/community post draft route with owner approval.", "search_query": "family hair help community post"},
@@ -1950,6 +2084,7 @@ def settings_payload(traffic_math=None):
         "public_owned_surface_scope": "FAQ Lounge, hair-problems, Growth Hub, public account/backlink pages, product/support pages, and any SupportRD-owned page can be used as public crawlable posting surfaces.",
         "traffic_math": traffic_math,
         "traffic_math_instruction": traffic_instruction_for_bot(traffic_math),
+        "dojj_website_health": dojj_website_health_payload(),
         "seo_guidelines": seo_guidelines,
         "seo_instruction": SEO_BOT_INSTRUCTION,
         "bot_swarm": swarm_payload(traffic_math=traffic_math),
@@ -2036,6 +2171,12 @@ def movement_for(item):
     elif "blog" in cat or "guest" in cat:
         movement = "Find permission-based contributor page -> draft article pitch -> queue manual submit -> wait for reply -> follow-up draft if no response."
         next_action = "Create another blog/post request draft while the older request waits."
+    elif any(term in cat for term in ["bulk shampoo", "salon vendor", "shampoo vendor", "santiago", "dominican", "distributor"]):
+        movement = "Build bulk vendor list -> prioritize Santiago Dominican Republic and international salon suppliers -> draft restock/resale offer -> queue owner review before any email, form, or account action."
+        next_action = "Create more Santiago shampoo vendor, beauty supply distributor, and international salon vendor drafts."
+    elif "lasersmarket" in cat or "premium signal" in cat or "investor" in cat:
+        movement = "Draft LasersMarket premium signal review call route -> target local stock/forex/crypto/options investors -> keep claims research-only -> queue owner call follow-up."
+        next_action = "Create more compliant local investor call-route drafts and log every direct-call result."
     elif "salon store" in cat or ("salon" in cat and ("comment" in cat or "post" in cat)):
         movement = "Draft salon page comment/post -> focus on after-care help -> queue for owner approval before any salon account or comment action."
         next_action = "Create more salon store comment/post drafts for approved salon pages."
@@ -2406,6 +2547,31 @@ def api_settings():
     return jsonify({"ok": True, "settings": settings_payload()})
 
 
+@outreach_engine_bp.route("/api/outreach/dojj-health")
+def api_dojj_health():
+    traffic_math = bot_traffic_math_payload()
+    return jsonify({
+        "ok": True,
+        "service": "supportrd-separate-bot-dojj-traffic-health",
+        "bot": "separate_supportrd_outreach_bot",
+        "traffic_math": traffic_math,
+        "dojj_traffic_health": dojj_website_health_payload(),
+        "bulk_priority": [
+            "shampoo vendors",
+            "hair salon vendors",
+            "Santiago Dominican Republic beauty supply buyers",
+            "international salon resale partners",
+        ],
+        "rules": [
+            "Push bulk vendor traffic through owned SupportRD routes and owner-approved outreach.",
+            "Watch website health for suspicious traffic, fake payment requests, strange redirects, API token gaps, and broken product media.",
+            "Do not post to third-party platforms or submit outside forms unless the owner account or approved connector is present.",
+            "Log source, buyer type, follow-up owner, and result back into Dojj.",
+        ],
+        "updated_at": utc(),
+    })
+
+
 @outreach_engine_bp.route("/api/outreach/connect/status")
 def api_connect_status():
     return jsonify({
@@ -2448,6 +2614,7 @@ def report():
         "settings": settings,
         "botSwarm": bot_swarm,
         "trafficMath": traffic_math,
+        "dojjTrafficHealth": dojj_website_health_payload(),
         "summary": {
             "total": len(report_rows),
             "categories": cats,
