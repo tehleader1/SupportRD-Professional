@@ -2581,7 +2581,7 @@ def record_dojj_site_traffic(payload, ip_address=""):
     now_iso = _local_remote_now()
     cutoff = (datetime.utcnow() - timedelta(days=35)).isoformat() + "Z"
     try:
-        conn = sqlite3.connect(CREDIT_DB_PATH)
+        conn = sqlite3.connect(CREDIT_DB_PATH, timeout=2.0)
         cur = conn.cursor()
         cur.execute(
             "INSERT INTO dojj_site_traffic_events "
@@ -2620,7 +2620,7 @@ def summarize_dojj_site_traffic(window_minutes=1440):
     window_minutes = max(1, int(window_minutes or 1440))
     cutoff = (datetime.utcnow() - timedelta(minutes=window_minutes)).isoformat() + "Z"
     try:
-        conn = sqlite3.connect(CREDIT_DB_PATH)
+        conn = sqlite3.connect(CREDIT_DB_PATH, timeout=2.0)
         cur = conn.cursor()
         site_rows = cur.execute(
             "SELECT site, COUNT(*) AS events, COUNT(DISTINCT visitor_key) AS visitors, SUM(is_lead_action) AS leads "
@@ -10757,7 +10757,7 @@ def dojj_traffic_pixel():
     return _dojj_traffic_json({
         "ok": bool(recorded.get("ok")),
         "recorded": recorded,
-        "summary": summarize_dojj_site_traffic(window_minutes=5),
+        "accepted_at": _local_remote_now(),
     }, status=200 if recorded.get("ok") else 500)
 
 
