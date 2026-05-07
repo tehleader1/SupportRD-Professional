@@ -2248,6 +2248,29 @@ def init_local_remote_db():
             ")"
         )
         cur.execute(
+            "CREATE TABLE IF NOT EXISTS dojj_site_traffic_events ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "site TEXT,"
+            "visitor_key TEXT,"
+            "event_name TEXT,"
+            "path TEXT,"
+            "url TEXT,"
+            "title TEXT,"
+            "referrer TEXT,"
+            "target TEXT,"
+            "target_text TEXT,"
+            "source TEXT,"
+            "campaign TEXT,"
+            "keyword TEXT,"
+            "medium TEXT,"
+            "city TEXT,"
+            "is_lead_action INTEGER DEFAULT 0,"
+            "payload_json TEXT,"
+            "ip_hash TEXT,"
+            "created_at TEXT"
+            ")"
+        )
+        cur.execute(
             "CREATE TABLE IF NOT EXISTS shopify_manual_session_reports ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT,"
             "report_link TEXT,"
@@ -2262,6 +2285,9 @@ def init_local_remote_db():
         cur.execute("CREATE INDEX IF NOT EXISTS idx_shopify_traffic_created ON shopify_traffic_events(created_at)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_shopify_traffic_bot ON shopify_traffic_events(is_bot_return, created_at)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_bot_return_created ON bot_return_visits(created_at)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_dojj_site_traffic_created ON dojj_site_traffic_events(created_at)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_dojj_site_traffic_site ON dojj_site_traffic_events(site, created_at)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_dojj_site_traffic_lead ON dojj_site_traffic_events(is_lead_action, created_at)")
         cur.execute(
             "CREATE TABLE IF NOT EXISTS local_remote_inbox_offers ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT,"
@@ -2467,6 +2493,329 @@ def summarize_local_remote_traffic(window_minutes=5):
             "top_paths": [],
             "mode": "steady_state",
         }
+
+
+DOJJ_TRACKED_SITES = [
+    "supportrd.com",
+    "digitalhut.app",
+    "theplantmaninc.com",
+    "lasersmarket.com",
+]
+
+DOJJ_LEAD_EVENTS = {
+    "phone_click",
+    "email_click",
+    "form_submit",
+    "checkout_click",
+    "marketplace_click",
+    "catalog_click",
+    "product_click",
+    "ad_route_click",
+    "bot_lead",
+}
+
+
+def _dojj_traffic_json(payload, status=200):
+    response = jsonify(payload)
+    response.status_code = status
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Requested-With"
+    response.headers["Access-Control-Max-Age"] = "86400"
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def _safe_site_name(value):
+    text = _clip_text(value, 80).lower()
+    text = re.sub(r"^https?://", "", text).split("/")[0].split("?")[0]
+    if text.startswith("www."):
+        text = text[4:]
+    return text if text in DOJJ_TRACKED_SITES else (text or "unknown-site")
+
+
+def _dojj_ip_hash(ip_address=""):
+    text = (ip_address or "").strip()
+    if not text:
+        return ""
+    return hashlib.sha256(f"dojj-site-traffic:{text}".encode("utf-8")).hexdigest()[:24]
+
+
+def _dojj_first_payload_value(payload, *keys):
+    payload = payload or {}
+    for key in keys:
+        value = payload.get(key)
+        if value:
+            return _clip_text(value, 160)
+    return ""
+
+
+def record_dojj_site_traffic(payload, ip_address=""):
+    payload = payload or {}
+    url = _clip_text(payload.get("url") or payload.get("href"), 420)
+    params = _query_params_from_url(url)
+    event_name = _clip_text(payload.get("event_name") or payload.get("event") or "page_view", 80).lower()
+    site = _safe_site_name(payload.get("site") or payload.get("domain") or urlparse(url or "").hostname or "")
+    path = _traffic_path_from_payload(payload)
+    visitor_key = _clip_text(payload.get("visitor_key") or payload.get("client_id") or "anonymous", 160) or "anonymous"
+    source = _dojj_first_payload_value(payload, "source", "utm_source", "sr_source") or _first_query_value(params, "utm_source", "sr_source", "source")
+    campaign = _dojj_first_payload_value(payload, "campaign", "utm_campaign", "sr_campaign") or _first_query_value(params, "utm_campaign", "sr_campaign", "campaign")
+    keyword = _dojj_first_payload_value(payload, "keyword", "utm_term", "term") or _first_query_value(params, "utm_term", "keyword", "term")
+    medium = _dojj_first_payload_value(payload, "medium", "utm_medium") or _first_query_value(params, "utm_medium", "medium")
+    target = _clip_text(payload.get("target") or payload.get("target_url"), 360)
+    target_text = _clip_text(payload.get("target_text") or payload.get("label"), 180)
+    city = _dojj_first_payload_value(payload, "city", "geo_city", "location") or _first_query_value(params, "city", "geo_city", "location")
+    is_lead_action = 1 if event_name in DOJJ_LEAD_EVENTS else 0
+    payload_json = json.dumps({
+        "event_name": event_name,
+        "site": site,
+        "path": path,
+        "source": source,
+        "campaign": campaign,
+        "keyword": keyword,
+        "medium": medium,
+        "city": city,
+        "target": target,
+        "target_text": target_text,
+    }, ensure_ascii=False)[:1800]
+    now_iso = _local_remote_now()
+    cutoff = (datetime.utcnow() - timedelta(days=35)).isoformat() + "Z"
+    try:
+        conn = sqlite3.connect(CREDIT_DB_PATH)
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO dojj_site_traffic_events "
+            "(site, visitor_key, event_name, path, url, title, referrer, target, target_text, source, campaign, keyword, medium, city, is_lead_action, payload_json, ip_hash, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                site,
+                visitor_key,
+                event_name,
+                path,
+                url,
+                _clip_text(payload.get("title"), 240),
+                _clip_text(payload.get("referrer"), 360),
+                target,
+                target_text,
+                source,
+                campaign,
+                keyword,
+                medium,
+                city,
+                is_lead_action,
+                payload_json,
+                _dojj_ip_hash(ip_address),
+                now_iso,
+            ),
+        )
+        cur.execute("DELETE FROM dojj_site_traffic_events WHERE created_at < ?", (cutoff,))
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:180], "site": site, "event_name": event_name}
+    return {"ok": True, "site": site, "event_name": event_name, "lead_action": bool(is_lead_action), "created_at": now_iso}
+
+
+def summarize_dojj_site_traffic(window_minutes=1440):
+    window_minutes = max(1, int(window_minutes or 1440))
+    cutoff = (datetime.utcnow() - timedelta(minutes=window_minutes)).isoformat() + "Z"
+    try:
+        conn = sqlite3.connect(CREDIT_DB_PATH)
+        cur = conn.cursor()
+        site_rows = cur.execute(
+            "SELECT site, COUNT(*) AS events, COUNT(DISTINCT visitor_key) AS visitors, SUM(is_lead_action) AS leads "
+            "FROM dojj_site_traffic_events WHERE created_at >= ? GROUP BY site ORDER BY events DESC",
+            (cutoff,),
+        ).fetchall() or []
+        top_pages = cur.execute(
+            "SELECT site, path, COUNT(*) AS hits FROM dojj_site_traffic_events WHERE created_at >= ? "
+            "GROUP BY site, path ORDER BY hits DESC LIMIT 12",
+            (cutoff,),
+        ).fetchall() or []
+        event_rows = cur.execute(
+            "SELECT event_name, COUNT(*) AS hits FROM dojj_site_traffic_events WHERE created_at >= ? "
+            "GROUP BY event_name ORDER BY hits DESC LIMIT 12",
+            (cutoff,),
+        ).fetchall() or []
+        source_rows = cur.execute(
+            "SELECT COALESCE(NULLIF(source, ''), 'direct') AS source, COUNT(*) AS hits FROM dojj_site_traffic_events WHERE created_at >= ? "
+            "GROUP BY COALESCE(NULLIF(source, ''), 'direct') ORDER BY hits DESC LIMIT 10",
+            (cutoff,),
+        ).fetchall() or []
+        newest = cur.execute(
+            "SELECT site, event_name, path, source, campaign, created_at FROM dojj_site_traffic_events ORDER BY id DESC LIMIT 8"
+        ).fetchall() or []
+        conn.close()
+        by_site = [
+            {
+                "site": row[0] or "unknown-site",
+                "events": int(row[1] or 0),
+                "visitors": int(row[2] or 0),
+                "lead_actions": int(row[3] or 0),
+            }
+            for row in site_rows
+        ]
+        known = {item["site"] for item in by_site}
+        for site in DOJJ_TRACKED_SITES:
+            if site not in known:
+                by_site.append({"site": site, "events": 0, "visitors": 0, "lead_actions": 0})
+        return {
+            "window_minutes": window_minutes,
+            "events": sum(item["events"] for item in by_site),
+            "visitors": sum(item["visitors"] for item in by_site),
+            "lead_actions": sum(item["lead_actions"] for item in by_site),
+            "by_site": by_site,
+            "top_pages": [{"site": row[0], "path": row[1], "hits": int(row[2] or 0)} for row in top_pages],
+            "top_events": [{"event_name": row[0], "hits": int(row[1] or 0)} for row in event_rows],
+            "top_sources": [{"source": row[0], "hits": int(row[1] or 0)} for row in source_rows],
+            "latest": [
+                {
+                    "site": row[0],
+                    "event_name": row[1],
+                    "path": row[2],
+                    "source": row[3] or "direct",
+                    "campaign": row[4] or "",
+                    "created_at": row[5],
+                }
+                for row in newest
+            ],
+        }
+    except Exception as exc:
+        return {
+            "window_minutes": window_minutes,
+            "events": 0,
+            "visitors": 0,
+            "lead_actions": 0,
+            "by_site": [{"site": site, "events": 0, "visitors": 0, "lead_actions": 0} for site in DOJJ_TRACKED_SITES],
+            "top_pages": [],
+            "top_events": [],
+            "top_sources": [],
+            "latest": [],
+            "error": str(exc)[:180],
+        }
+
+
+def build_dojj_site_traffic_summary():
+    windows = [1, 5, 15, 60, 1440, 10080]
+    summaries = [summarize_dojj_site_traffic(minutes) for minutes in windows]
+    day = next((item for item in summaries if item["window_minutes"] == 1440), summaries[-1])
+    five = next((item for item in summaries if item["window_minutes"] == 5), summaries[0])
+    return {
+        "ok": True,
+        "service": "dojj-cross-site-live-traffic",
+        "updated_at": _local_remote_now(),
+        "tracked_sites": DOJJ_TRACKED_SITES,
+        "current": {
+            "last_5_minutes": five,
+            "last_24_hours": day,
+            "all_site_total_visitors_24h": day.get("visitors", 0),
+            "all_site_total_events_24h": day.get("events", 0),
+            "all_site_lead_actions_24h": day.get("lead_actions", 0),
+        },
+        "windows": summaries,
+        "rules": [
+            "Counts real browser events from owned sites only.",
+            "Lead actions include phone, email, form, catalog, checkout, marketplace, ad-route, and bot-lead clicks.",
+            "IP addresses are stored as short hashes, not raw addresses.",
+            "UTM source, campaign, medium, keyword, and city are captured when present.",
+        ],
+    }
+
+
+def build_dojj_traffic_pixel_script(default_site=""):
+    site = _safe_site_name(default_site)
+    return f"""(() => {{
+  const ENDPOINT = 'https://supportrd.com/api/dojj/traffic/pixel';
+  const SITE = {json.dumps(site)};
+  const KEY = 'dojj_cross_site_visitor';
+  const MAX_TEXT = 160;
+  const safeText = (value, limit = MAX_TEXT) => String(value || '').replace(/\\s+/g, ' ').trim().slice(0, limit);
+  const cleanTarget = (href) => {{
+    const text = String(href || '');
+    if (text.startsWith('mailto:')) return text.split('?')[0];
+    return text.slice(0, 360);
+  }};
+  const visitorKey = (() => {{
+    try {{
+      let existing = localStorage.getItem(KEY);
+      if (!existing) {{
+        existing = 'dojj-' + Math.random().toString(36).slice(2) + '-' + Date.now().toString(36);
+        localStorage.setItem(KEY, existing);
+      }}
+      return existing;
+    }} catch (error) {{
+      return 'dojj-session-' + Date.now().toString(36);
+    }}
+  }})();
+  const params = new URLSearchParams(window.location.search || '');
+  const payloadBase = () => ({{
+    site: SITE,
+    visitor_key: visitorKey,
+    url: window.location.href,
+    path: window.location.pathname + window.location.search,
+    title: document.title,
+    referrer: document.referrer,
+    source: params.get('utm_source') || params.get('sr_source') || '',
+    medium: params.get('utm_medium') || '',
+    campaign: params.get('utm_campaign') || params.get('sr_campaign') || '',
+    keyword: params.get('utm_term') || params.get('keyword') || '',
+    city: params.get('city') || params.get('geo_city') || ''
+  }});
+  const classify = (element) => {{
+    const href = String(element?.getAttribute?.('href') || '');
+    const text = safeText(element?.innerText || element?.textContent || element?.getAttribute?.('aria-label') || '');
+    const combined = (href + ' ' + text + ' ' + element?.className + ' ' + element?.id).toLowerCase();
+    if (href.startsWith('tel:')) return 'phone_click';
+    if (href.startsWith('mailto:')) return 'email_click';
+    if (combined.includes('checkout') || combined.includes('buy')) return 'checkout_click';
+    if (combined.includes('rarible') || combined.includes('opensea') || combined.includes('zora') || combined.includes('magiceden') || combined.includes('marketplace')) return 'marketplace_click';
+    if (combined.includes('catalog') || combined.includes('inventory')) return 'catalog_click';
+    if (combined.includes('product') || combined.includes('/products/')) return 'product_click';
+    if (combined.includes('ad') || combined.includes('utm_') || combined.includes('campaign')) return 'ad_route_click';
+    if (combined.includes('bot') || combined.includes('lead')) return 'bot_lead';
+    return 'link_click';
+  }};
+  const send = (eventName, extra = {{}}) => {{
+    const body = JSON.stringify(Object.assign(payloadBase(), extra, {{ event_name: eventName }}));
+    try {{
+      if (navigator.sendBeacon) {{
+        const blob = new Blob([body], {{ type: 'application/json' }});
+        if (navigator.sendBeacon(ENDPOINT, blob)) return;
+      }}
+    }} catch (error) {{}}
+    try {{
+      fetch(ENDPOINT, {{
+        method: 'POST',
+        mode: 'cors',
+        keepalive: true,
+        headers: {{ 'Content-Type': 'application/json' }},
+        body
+      }}).catch(() => {{}});
+    }} catch (error) {{}}
+  }};
+  window.DojjTraffic = Object.assign(window.DojjTraffic || {{}}, {{ send }});
+  if (document.readyState === 'loading') {{
+    document.addEventListener('DOMContentLoaded', () => send('page_view'), {{ once: true }});
+  }} else {{
+    send('page_view');
+  }}
+  document.addEventListener('click', (event) => {{
+    const element = event.target.closest && event.target.closest('a,button,[role=\"button\"],input[type=\"submit\"]');
+    if (!element) return;
+    send(classify(element), {{
+      target: cleanTarget(element.getAttribute('href') || element.dataset?.route || element.id || ''),
+      target_text: safeText(element.innerText || element.value || element.getAttribute('aria-label') || element.id || '')
+    }});
+  }}, true);
+  document.addEventListener('submit', (event) => {{
+    const form = event.target;
+    send('form_submit', {{
+      target: cleanTarget(form?.getAttribute?.('action') || window.location.pathname),
+      target_text: safeText(form?.getAttribute?.('aria-label') || form?.id || 'form')
+    }});
+  }}, true);
+}})();
+"""
 
 
 SHOPIFY_TRAFFIC_EVENT_NAMES = [
@@ -3511,6 +3860,97 @@ def build_shopify_traffic_summary(include_sessions_report=False):
         "install_hint": "Shopify admin -> Settings -> Customer events -> Add custom pixel -> paste this snippet.",
     }
 
+
+def build_dojj_combination_summary():
+    traffic = build_shopify_traffic_summary(include_sessions_report=False)
+    cross_site_traffic = build_dojj_site_traffic_summary()
+    cross_day = cross_site_traffic.get("current", {}).get("last_24_hours", {})
+    cross_five = cross_site_traffic.get("current", {}).get("last_5_minutes", {})
+    shopify_day = next((item for item in traffic.get("shopify", []) if item.get("window_minutes") == 1440), {})
+    local_day = next((item for item in traffic.get("local", []) if item.get("window_minutes") == 1440), {})
+    shopify_five = next((item for item in traffic.get("shopify", []) if item.get("window_minutes") == 5), {})
+    local_five = next((item for item in traffic.get("local", []) if item.get("window_minutes") == 5), {})
+    base_day_visitors = int(shopify_day.get("visitors", 0) or 0) + int(local_day.get("visitors", 0) or 0)
+    base_day_events = int(shopify_day.get("events", 0) or 0) + int(local_day.get("events", 0) or 0)
+    day_visitors = max(base_day_visitors, int(cross_day.get("visitors", 0) or 0))
+    day_events = max(base_day_events, int(cross_day.get("events", 0) or 0))
+    bot_returns = int(traffic.get("bot_return_total", 0) or 0)
+    wave_score = int(traffic.get("wave_score", 0) or 0)
+    recent_motion = max(
+        int(shopify_five.get("events", 0) or 0) + int(local_five.get("events", 0) or 0),
+        int(cross_five.get("events", 0) or 0)
+    )
+    health_score = min(100, int(wave_score * 0.58 + day_visitors * 1.4 + bot_returns * 8 + recent_motion * 3))
+    if health_score >= 72:
+        status = "Healthy scale lane"
+        summary = "Dojj sees enough SupportRD and DigitalHut motion to keep routing viewers into product pages, owner vault, and email closeout."
+    elif health_score >= 44:
+        status = "Qualified but leaky"
+        summary = "Dojj sees real attention, but the sales path should stay tighter: contact, catalog, vault, and follow-up email need to stay near the top."
+    else:
+        status = "Needs stronger sales pull"
+        summary = "Dojj wants clearer proof, product value, and owner-contact routing before increasing outside traffic."
+    lanes = [
+        {
+            "id": "developer-revenue-contact",
+            "label": "Developer Revenue Contact",
+            "route": "tel:+19802306202",
+            "owner": "980-230-6202",
+            "mode": "direct_contact",
+            "job": "Give every site a direct revenue contact at the top."
+        },
+        {
+            "id": "supportrd-product-flow",
+            "label": "SupportRD product flow",
+            "route": "https://supportrd.com/",
+            "mode": "owned_surface",
+            "job": "Move hair/product visitors into ARIA, catalog, checkout, and owner follow-up."
+        },
+        {
+            "id": "digitalhut-owner-vault",
+            "label": "DigitalHut owner vault",
+            "route": "https://digitalhut.app/#asset-routes",
+            "mode": "owned_surface",
+            "job": "Move digital asset viewers into proof, vault, marketplace handoff, and API interest."
+        },
+        {
+            "id": "owned-post-bot",
+            "label": "Owned posting bot",
+            "route": "https://supportrd.com/api/outreach/owned-posts",
+            "mode": SUPPORTRD_POSTING_MODE,
+            "job": "Use SupportRD-owned surfaces for approved updates; external platforms remain owner-approved."
+        }
+    ]
+    return {
+        "ok": True,
+        "service": "supportrd-digitalhut-dojj-combination",
+        "domains": ["supportrd.com", "digitalhut.app"],
+        "contact": {
+            "label": "Developer Revenue Contact",
+            "phone": "980-230-6202",
+            "tel": "+19802306202"
+        },
+        "health": {
+            "score": health_score,
+            "status": status,
+            "summary": summary,
+            "day_visitors": day_visitors,
+            "day_events": day_events,
+            "bot_returns": bot_returns,
+            "wave_score": wave_score,
+            "recent_motion": recent_motion
+        },
+        "lanes": lanes,
+        "checks_and_balances": [
+            "Owned websites can update automatically.",
+            "External ad, marketplace, and search lanes stay owner-approved.",
+            "Dojj counts traffic and sales motion; it does not create fake views."
+        ],
+        "traffic": traffic,
+        "cross_site_traffic": cross_site_traffic,
+        "updated_at": _local_remote_now()
+    }
+
 MARKET_READER_ENDPOINT = os.environ.get(
     "MARKET_READER_ENDPOINT",
     "https://lasersmarket.com/api/options-dashboard",
@@ -4408,6 +4848,7 @@ def reset_globaltracker_data_once():
         "local_remote_traffic_events",
         "shopify_traffic_events",
         "bot_return_visits",
+        "dojj_site_traffic_events",
         "shopify_manual_session_reports",
         "local_remote_inbox_offers",
         "local_remote_conversion_events",
@@ -4978,6 +5419,8 @@ def security_guard():
     if path.startswith("/static/") or path in {"/favicon.ico", "/sw.js"}:
         return None
     if path.startswith("/api/shopify/traffic/"):
+        return None
+    if path.startswith("/api/dojj/traffic/"):
         return None
     if path.startswith("/api/security/self-unban-speedhack"):
         return None
@@ -10264,6 +10707,11 @@ def shopify_traffic_summary():
     return _shopify_traffic_json(build_shopify_traffic_summary(include_sessions_report=include_sessions))
 
 
+@app.route("/api/dojj/combination")
+def dojj_combination_summary():
+    return _shopify_traffic_json(build_dojj_combination_summary())
+
+
 @app.route("/api/shopify/traffic/sessions-report")
 def shopify_traffic_sessions_report():
     force = str(request.args.get("force") or "").lower() in ("1", "true", "yes")
@@ -10289,6 +10737,33 @@ def shopify_traffic_snippet():
     response = Response(build_shopify_traffic_pixel_snippet(), mimetype="text/plain")
     response.headers["Access-Control-Allow-Origin"] = "*"
     return response
+
+
+@app.route("/api/dojj/traffic/pixel.js")
+def dojj_traffic_pixel_js():
+    site = request.args.get("site") or request.args.get("domain") or ""
+    response = Response(build_dojj_traffic_pixel_script(site), mimetype="application/javascript")
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Cache-Control"] = "public, max-age=300"
+    return response
+
+
+@app.route("/api/dojj/traffic/pixel", methods=["POST", "OPTIONS"])
+def dojj_traffic_pixel():
+    if request.method == "OPTIONS":
+        return _dojj_traffic_json({"ok": True}, status=204)
+    body = request.get_json(silent=True) or request.form.to_dict() or request.args.to_dict() or {}
+    recorded = record_dojj_site_traffic(body, request.remote_addr or "")
+    return _dojj_traffic_json({
+        "ok": bool(recorded.get("ok")),
+        "recorded": recorded,
+        "summary": summarize_dojj_site_traffic(window_minutes=5),
+    }, status=200 if recorded.get("ok") else 500)
+
+
+@app.route("/api/dojj/traffic/summary")
+def dojj_traffic_summary():
+    return _dojj_traffic_json(build_dojj_site_traffic_summary())
 
 
 @app.route("/api/local-remote/inbox/offers")
