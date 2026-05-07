@@ -2521,10 +2521,10 @@ DOJJ_TRAFFIC_LAUNCH_SITES = [
         "priority": "Primary push",
         "audience": "NFT buyers, digital property buyers, 3D home/office asset viewers, Rarible collectors",
         "google_profile": "Prepare a legitimate Google Business Profile only if the business has a real service-area or physical verification path. Do not use a fake storefront.",
-        "primary_link": "https://digitalhut.app/rarible-live.html?utm_source=google_profile&utm_medium=organic_profile&utm_campaign=digitalhut_nft_property_assets",
-        "bing_link": "https://digitalhut.app/rarible-live.html?utm_source=bing_places&utm_medium=organic_profile&utm_campaign=digitalhut_nft_property_assets",
-        "meta_link": "https://digitalhut.app/rarible-live.html?utm_source=meta_business&utm_medium=organic_social&utm_campaign=digitalhut_nft_property_assets",
-        "call_to_action": "View the Digitalhut Rarible action room and property asset proof.",
+        "primary_link": "https://digitalhut.app/?utm_source=google_profile&utm_medium=organic_profile&utm_campaign=digitalhut_nft_property_assets",
+        "bing_link": "https://digitalhut.app/?utm_source=bing_places&utm_medium=organic_profile&utm_campaign=digitalhut_nft_property_assets",
+        "meta_link": "https://digitalhut.app/?utm_source=meta_business&utm_medium=organic_social&utm_campaign=digitalhut_nft_property_assets",
+        "call_to_action": "Open the main Digitalhut website for the property asset proof and buyer handoff.",
         "profile_name": "Digitalhut Digital Property Assets",
         "keywords": [
             "digital property assets",
@@ -2535,7 +2535,7 @@ DOJJ_TRAFFIC_LAUNCH_SITES = [
         ],
         "next_actions": [
             "Create or verify the Google profile with the real owner/business identity.",
-            "Add the Rarible action room as the website link.",
+            "Add https://digitalhut.app as the website link.",
             "Post one weekly update showing the 3D house/office, blueprint proof, and buyer handoff.",
             "Track every click with the google_profile, bing_places, and meta_business links.",
         ],
