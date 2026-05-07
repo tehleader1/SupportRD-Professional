@@ -2514,6 +2514,91 @@ DOJJ_LEAD_EVENTS = {
     "bot_lead",
 }
 
+DOJJ_TRAFFIC_LAUNCH_SITES = [
+    {
+        "site": "digitalhut.app",
+        "business": "Digitalhut NFT / digital property assets",
+        "priority": "Primary push",
+        "audience": "NFT buyers, digital property buyers, 3D home/office asset viewers, Rarible collectors",
+        "google_profile": "Prepare a legitimate Google Business Profile only if the business has a real service-area or physical verification path. Do not use a fake storefront.",
+        "primary_link": "https://digitalhut.app/rarible-live.html?utm_source=google_profile&utm_medium=organic_profile&utm_campaign=digitalhut_nft_property_assets",
+        "bing_link": "https://digitalhut.app/rarible-live.html?utm_source=bing_places&utm_medium=organic_profile&utm_campaign=digitalhut_nft_property_assets",
+        "meta_link": "https://digitalhut.app/rarible-live.html?utm_source=meta_business&utm_medium=organic_social&utm_campaign=digitalhut_nft_property_assets",
+        "call_to_action": "View the Digitalhut Rarible action room and property asset proof.",
+        "profile_name": "Digitalhut Digital Property Assets",
+        "keywords": [
+            "digital property assets",
+            "NFT property models",
+            "3D home office NFTs",
+            "Rarible digital real estate",
+            "virtual property builds",
+        ],
+        "next_actions": [
+            "Create or verify the Google profile with the real owner/business identity.",
+            "Add the Rarible action room as the website link.",
+            "Post one weekly update showing the 3D house/office, blueprint proof, and buyer handoff.",
+            "Track every click with the google_profile, bing_places, and meta_business links.",
+        ],
+    },
+    {
+        "site": "supportrd.com",
+        "business": "SupportRD vendor and salon bulk product lane",
+        "priority": "Second push",
+        "audience": "Shampoo vendors, hair salon vendors, Santiago Dominican Republic shops, international resellers",
+        "google_profile": "Use the real SupportRD service/vendor identity and keep the profile focused on product support, bulk vendor routing, and ARIA help.",
+        "primary_link": "https://supportrd.com/?utm_source=google_profile&utm_medium=organic_profile&utm_campaign=supportrd_vendor_bulk",
+        "bing_link": "https://supportrd.com/?utm_source=bing_places&utm_medium=organic_profile&utm_campaign=supportrd_vendor_bulk",
+        "meta_link": "https://supportrd.com/?utm_source=meta_business&utm_medium=organic_social&utm_campaign=supportrd_santiago_vendor_bulk",
+        "call_to_action": "Bulk vendor inquiry for shampoo and salon product support.",
+        "profile_name": "SupportRD Vendor Support",
+        "keywords": [
+            "bulk shampoo vendors",
+            "hair salon vendors",
+            "Santiago Dominican Republic hair products",
+            "salon product support",
+            "international beauty vendor support",
+        ],
+        "next_actions": [
+            "Route Google/Bing profile visitors to the SupportRD home page with tracked links.",
+            "Create a Santiago vendor outreach list and tag links with city=santiago-dr.",
+            "Keep vendor claims simple: bulk inquiry, support, and follow-up.",
+            "Let Dojj score clicks, vendor replies, phone taps, and form leads.",
+        ],
+    },
+    {
+        "site": "lasersmarket.com",
+        "business": "LasersMarket premium market signal calls",
+        "priority": "Third push",
+        "audience": "Local stock, forex, crypto, and options investors who want direct calls",
+        "google_profile": "Use compliance-safe wording: market research, education, premium signal discussion, and direct consultation. No guaranteed profits.",
+        "primary_link": "https://lasersmarket.com/?utm_source=google_profile&utm_medium=organic_profile&utm_campaign=lasersmarket_premium_signals",
+        "bing_link": "https://lasersmarket.com/?utm_source=bing_places&utm_medium=organic_profile&utm_campaign=lasersmarket_premium_signals",
+        "meta_link": "https://lasersmarket.com/?utm_source=meta_business&utm_medium=organic_social&utm_campaign=lasersmarket_premium_signals",
+        "call_to_action": "$25,000 premium signal route. Direct calls welcome: 980-230-6202.",
+        "profile_name": "LasersMarket Premium Market Signals",
+        "keywords": [
+            "premium market signals",
+            "options trading education",
+            "forex crypto stock research",
+            "direct investor call",
+            "market signal consultation",
+        ],
+        "next_actions": [
+            "Put Developer Revenue Contact 980-230-6202 at the top of the profile and page.",
+            "Use tracked links for Google, Bing, and Meta posts.",
+            "Keep wording educational and consultation-based.",
+            "Dojj should flag phone clicks, email clicks, and premium call route clicks as hot leads.",
+        ],
+    },
+]
+
+DOJJ_TRAFFIC_PAUSED_SITES = [
+    {
+        "site": "theplantmaninc.com",
+        "reason": "Paused by owner. Do not push plant delivery traffic in this launch cycle.",
+    }
+]
+
 
 def _dojj_traffic_json(payload, status=200):
     response = jsonify(payload)
@@ -2719,6 +2804,78 @@ def build_dojj_site_traffic_summary():
             "IP addresses are stored as short hashes, not raw addresses.",
             "UTM source, campaign, medium, keyword, and city are captured when present.",
         ],
+    }
+
+
+def _dojj_launch_site_score(site, day_rows):
+    row = next((item for item in day_rows if item.get("site") == site), {}) or {}
+    events = int(row.get("events", 0) or 0)
+    visitors = int(row.get("visitors", 0) or 0)
+    leads = int(row.get("lead_actions", 0) or 0)
+    score = min(100, int(visitors * 8 + leads * 18 + events * 2))
+    if score >= 70:
+        status = "Push harder"
+        next_move = "Keep the channel active and follow up every lead today."
+    elif score >= 30:
+        status = "Warm up"
+        next_move = "Tighten the profile copy and post one proof update with the tracked link."
+    else:
+        status = "Needs traffic"
+        next_move = "Start with profile setup, one owner post, and 10 direct qualified contacts."
+    return {
+        "events_24h": events,
+        "visitors_24h": visitors,
+        "lead_actions_24h": leads,
+        "score": score,
+        "status": status,
+        "next_move": next_move,
+    }
+
+
+def build_dojj_traffic_launch_board():
+    traffic = build_dojj_site_traffic_summary()
+    day = traffic.get("current", {}).get("last_24_hours", {})
+    day_rows = day.get("by_site", []) or []
+    sites = []
+    for site in DOJJ_TRAFFIC_LAUNCH_SITES:
+        row = dict(site)
+        row["dojj"] = _dojj_launch_site_score(site.get("site"), day_rows)
+        sites.append(row)
+    total_visitors = sum(item["dojj"]["visitors_24h"] for item in sites)
+    total_leads = sum(item["dojj"]["lead_actions_24h"] for item in sites)
+    if total_leads:
+        command = "Follow up every lead and keep the strongest profile/post active."
+    elif total_visitors:
+        command = "Traffic exists but is not converting yet. Put phone, email, and buyer handoff higher."
+    else:
+        command = "No traffic yet. Build the Google/Bing/Meta profiles and send the first tracked links today."
+    return {
+        "ok": True,
+        "service": "dojj-three-site-traffic-launch-board",
+        "updated_at": _local_remote_now(),
+        "focus": "PlantMan paused. Push Digitalhut NFT/property assets first, then SupportRD and LasersMarket.",
+        "owner_contact": {
+            "label": "Developer Revenue Contact",
+            "phone": "980-230-6202",
+            "tel": "+19802306202",
+        },
+        "command": command,
+        "active_sites": sites,
+        "paused_sites": DOJJ_TRAFFIC_PAUSED_SITES,
+        "channel_rules": [
+            "Use real profiles only. No fake address, fake reviews, fake clicks, or fake traffic.",
+            "Every channel uses a tracked UTM link so Dojj can read the source.",
+            "External platforms are owner-posted or owner-approved. The bot routes and measures; it does not spam.",
+            "LasersMarket must stay education/consultation based with no guaranteed-profit claims.",
+        ],
+        "profile_links": {
+            "google_business_profile": "https://business.google.com/",
+            "bing_places": "https://www.bingplaces.com/",
+            "meta_business_suite": "https://business.facebook.com/",
+            "google_search_console": "https://search.google.com/search-console",
+            "microsoft_advertising": "https://ads.microsoft.com/",
+        },
+        "traffic": traffic,
     }
 
 
@@ -9969,6 +10126,11 @@ def local_remote_shell():
     return send_from_directory("static", "local-remote.html")
 
 
+@app.route("/traffic-launch")
+def traffic_launch_shell():
+    return send_from_directory("static", "traffic-launch.html")
+
+
 @app.route("/local-diary")
 def local_diary_shell():
     return send_from_directory("static", "local-diary.html")
@@ -10710,6 +10872,11 @@ def shopify_traffic_summary():
 @app.route("/api/dojj/combination")
 def dojj_combination_summary():
     return _shopify_traffic_json(build_dojj_combination_summary())
+
+
+@app.route("/api/dojj/traffic/launch-board")
+def dojj_traffic_launch_board():
+    return _dojj_traffic_json(build_dojj_traffic_launch_board())
 
 
 @app.route("/api/shopify/traffic/sessions-report")

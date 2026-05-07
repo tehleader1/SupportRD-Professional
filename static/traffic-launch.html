@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dojj Traffic Launch Board</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #07100d;
+      --panel: rgba(15, 27, 22, 0.92);
+      --panel-soft: rgba(255, 255, 255, 0.055);
+      --line: rgba(180, 255, 213, 0.17);
+      --ink: #f5fff8;
+      --muted: #a8bbb0;
+      --green: #84f07a;
+      --cyan: #4fd8f5;
+      --gold: #efc86a;
+      --danger: #ff977a;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        linear-gradient(135deg, rgba(4, 18, 13, 0.96), rgba(5, 8, 12, 0.99) 50%, rgba(28, 18, 8, 0.93)),
+        var(--bg);
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .shell {
+      width: min(1360px, 100%);
+      margin: 0 auto;
+      padding: 18px;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(260px, 420px);
+      gap: 16px;
+      padding: clamp(22px, 4vw, 52px);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background:
+        radial-gradient(circle at 76% 16%, rgba(79, 216, 245, 0.18), transparent 28%),
+        linear-gradient(145deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.025)),
+        var(--panel);
+    }
+
+    .eyebrow,
+    .metric span,
+    .card > span,
+    .mini-card span {
+      color: var(--green);
+      font-size: 11px;
+      font-weight: 950;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      max-width: 980px;
+      margin-top: 10px;
+      font-size: clamp(44px, 7vw, 88px);
+      line-height: 0.92;
+      letter-spacing: 0;
+    }
+
+    .hero p {
+      max-width: 760px;
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: clamp(18px, 2.3vw, 25px);
+      font-weight: 750;
+      line-height: 1.3;
+    }
+
+    .contact-card {
+      align-self: end;
+      display: grid;
+      gap: 12px;
+      padding: 18px;
+      border: 1px solid rgba(79, 216, 245, 0.26);
+      border-radius: 8px;
+      background: rgba(5, 10, 12, 0.72);
+    }
+
+    .contact-card strong {
+      font-size: clamp(26px, 4vw, 44px);
+      line-height: 1;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 22px;
+    }
+
+    .actions a,
+    .button {
+      min-height: 44px;
+      display: inline-grid;
+      place-items: center;
+      border: 1px solid rgba(79, 216, 245, 0.28);
+      border-radius: 7px;
+      padding: 0 14px;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--ink);
+      font: inherit;
+      font-weight: 950;
+      cursor: pointer;
+    }
+
+    .actions a.primary,
+    .button.primary {
+      background: linear-gradient(135deg, var(--green), var(--cyan));
+      color: #04100f;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin: 16px 0;
+    }
+
+    .metric,
+    .card,
+    .mini-card,
+    .paused {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-soft);
+    }
+
+    .metric {
+      min-height: 132px;
+      display: grid;
+      align-content: space-between;
+      padding: 16px;
+    }
+
+    .metric strong {
+      font-size: clamp(30px, 5vw, 58px);
+      line-height: 0.95;
+    }
+
+    .board {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .card {
+      display: grid;
+      gap: 14px;
+      padding: 16px;
+      background:
+        linear-gradient(145deg, rgba(79, 216, 245, 0.08), rgba(132, 240, 122, 0.055)),
+        var(--panel);
+    }
+
+    .card h2 {
+      font-size: clamp(28px, 4vw, 42px);
+      line-height: 0.98;
+    }
+
+    .card p,
+    .card li,
+    .paused,
+    .mini-card p {
+      color: var(--muted);
+      font-weight: 720;
+      line-height: 1.35;
+    }
+
+    .score {
+      display: grid;
+      grid-template-columns: 92px minmax(0, 1fr);
+      gap: 12px;
+      align-items: center;
+      padding: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.22);
+    }
+
+    .score strong {
+      width: 82px;
+      height: 82px;
+      display: grid;
+      place-items: center;
+      border: 2px solid var(--green);
+      border-radius: 50%;
+      color: var(--green);
+      font-size: 26px;
+    }
+
+    .links {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .links a {
+      min-height: 42px;
+      display: grid;
+      place-items: center;
+      border-radius: 7px;
+      background: rgba(79, 216, 245, 0.13);
+      color: var(--cyan);
+      font-weight: 950;
+      text-align: center;
+    }
+
+    ul {
+      display: grid;
+      gap: 8px;
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    .mini-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 14px;
+    }
+
+    .mini-card,
+    .paused {
+      padding: 16px;
+    }
+
+    .paused {
+      margin-top: 14px;
+      border-color: rgba(255, 151, 122, 0.26);
+      color: var(--danger);
+    }
+
+    code {
+      color: var(--gold);
+      overflow-wrap: anywhere;
+    }
+
+    @media (max-width: 980px) {
+      .hero,
+      .metrics,
+      .board,
+      .mini-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .links {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero" aria-labelledby="title">
+      <div>
+        <span class="eyebrow">Dojj traffic launch board</span>
+        <h1 id="title">NFT business first. SupportRD and LasersMarket next.</h1>
+        <p id="commandText">Loading live traffic command...</p>
+        <div class="actions">
+          <a class="primary" data-track="ad_route_click" href="https://digitalhut.app/rarible-live.html?utm_source=traffic_launch&utm_medium=owned_board&utm_campaign=digitalhut_nft_property_assets">Open Digitalhut NFT Route</a>
+          <a data-track="ad_route_click" href="https://business.google.com/" target="_blank" rel="noopener">Google Profile</a>
+          <a data-track="ad_route_click" href="https://www.bingplaces.com/" target="_blank" rel="noopener">Bing Places</a>
+          <button class="button" id="refreshButton" type="button">Refresh Dojj</button>
+        </div>
+      </div>
+      <aside class="contact-card">
+        <span class="eyebrow">Developer Revenue Contact</span>
+        <strong>980-230-6202</strong>
+        <p>Direct calls route into the three-site push. PlantMan stays paused for this launch cycle.</p>
+      </aside>
+    </section>
+
+    <section class="metrics" aria-label="Live traffic metrics">
+      <article class="metric">
+        <span>Total visitors 24h</span>
+        <strong id="totalVisitors">--</strong>
+      </article>
+      <article class="metric">
+        <span>Lead actions 24h</span>
+        <strong id="totalLeads">--</strong>
+      </article>
+      <article class="metric">
+        <span>Total events 24h</span>
+        <strong id="totalEvents">--</strong>
+      </article>
+      <article class="metric">
+        <span>Last refresh</span>
+        <strong id="lastRefresh">--</strong>
+      </article>
+    </section>
+
+    <section id="siteBoard" class="board" aria-live="polite"></section>
+
+    <section class="mini-grid" aria-label="Profile links and rules">
+      <article class="mini-card">
+        <span>Profile links</span>
+        <h2>Official setup lanes</h2>
+        <p><a href="https://business.google.com/" target="_blank" rel="noopener">Google Business Profile</a></p>
+        <p><a href="https://search.google.com/search-console" target="_blank" rel="noopener">Google Search Console</a></p>
+        <p><a href="https://www.bingplaces.com/" target="_blank" rel="noopener">Bing Places</a></p>
+        <p><a href="https://business.facebook.com/" target="_blank" rel="noopener">Meta Business Suite</a></p>
+      </article>
+      <article class="mini-card">
+        <span>Rules</span>
+        <h2>Clean traffic only</h2>
+        <div id="rules"></div>
+      </article>
+    </section>
+
+    <section id="paused" class="paused"></section>
+  </main>
+
+  <script>
+    const board = document.getElementById('siteBoard');
+    const commandText = document.getElementById('commandText');
+    const refreshButton = document.getElementById('refreshButton');
+    const totalVisitors = document.getElementById('totalVisitors');
+    const totalLeads = document.getElementById('totalLeads');
+    const totalEvents = document.getElementById('totalEvents');
+    const lastRefresh = document.getElementById('lastRefresh');
+    const rules = document.getElementById('rules');
+    const paused = document.getElementById('paused');
+
+    const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    }[char]));
+
+    function track(eventName, target, text) {
+      try {
+        fetch('/api/dojj/traffic/pixel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            site: 'supportrd.com',
+            event_name: eventName,
+            visitor_key: localStorage.getItem('dojj_launch_visitor') || 'launch-board',
+            url: window.location.href,
+            path: window.location.pathname + window.location.search,
+            title: document.title,
+            source: 'traffic_launch',
+            medium: 'owned_board',
+            campaign: 'three_site_push',
+            target,
+            target_text: text
+          })
+        });
+      } catch (error) {}
+    }
+
+    function renderSite(site) {
+      const dojj = site.dojj || {};
+      const links = [
+        ['Google link', site.primary_link],
+        ['Bing link', site.bing_link],
+        ['Meta link', site.meta_link]
+      ];
+      return `
+        <article class="card">
+          <span>${escapeHtml(site.priority)}</span>
+          <h2>${escapeHtml(site.business)}</h2>
+          <p>${escapeHtml(site.audience)}</p>
+          <div class="score">
+            <strong>${escapeHtml(dojj.score ?? 0)}</strong>
+            <p><b>${escapeHtml(dojj.status || 'Needs traffic')}</b><br>${escapeHtml(dojj.next_move || '')}</p>
+          </div>
+          <p><b>Profile name:</b> ${escapeHtml(site.profile_name)}</p>
+          <p><b>CTA:</b> ${escapeHtml(site.call_to_action)}</p>
+          <p>${escapeHtml(site.google_profile)}</p>
+          <div class="links">
+            ${links.map(([label, href]) => `<a data-track="ad_route_click" href="${escapeHtml(href)}" target="_blank" rel="noopener">${escapeHtml(label)}</a>`).join('')}
+          </div>
+          <div>
+            <span>Keywords</span>
+            <p><code>${escapeHtml((site.keywords || []).join(' | '))}</code></p>
+          </div>
+          <div>
+            <span>Next actions</span>
+            <ul>${(site.next_actions || []).map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+          </div>
+        </article>
+      `;
+    }
+
+    function render(data) {
+      const activeSites = data.active_sites || [];
+      const day = data.traffic?.current?.last_24_hours || {};
+      commandText.textContent = data.command || data.focus || 'Launch board ready.';
+      totalVisitors.textContent = String(day.visitors ?? 0);
+      totalLeads.textContent = String(day.lead_actions ?? 0);
+      totalEvents.textContent = String(day.events ?? 0);
+      lastRefresh.textContent = new Date(data.updated_at || Date.now()).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      board.innerHTML = activeSites.map(renderSite).join('');
+      rules.innerHTML = `<ul>${(data.channel_rules || []).map((rule) => `<li>${escapeHtml(rule)}</li>`).join('')}</ul>`;
+      paused.innerHTML = `<span class="eyebrow">Paused</span>${(data.paused_sites || []).map((item) => `<p><b>${escapeHtml(item.site)}</b>: ${escapeHtml(item.reason)}</p>`).join('')}`;
+      document.querySelectorAll('[data-track]').forEach((item) => {
+        item.addEventListener('click', () => track(item.dataset.track, item.href || '', item.textContent || ''), { once: true });
+      });
+    }
+
+    async function loadBoard() {
+      refreshButton.disabled = true;
+      try {
+        const response = await fetch('/api/dojj/traffic/launch-board', { cache: 'no-store' });
+        const data = await response.json();
+        render(data);
+      } catch (error) {
+        commandText.textContent = 'Dojj launch board could not load. Check the SupportRD service.';
+      } finally {
+        refreshButton.disabled = false;
+      }
+    }
+
+    try {
+      if (!localStorage.getItem('dojj_launch_visitor')) {
+        localStorage.setItem('dojj_launch_visitor', 'launch-' + Math.random().toString(36).slice(2) + '-' + Date.now().toString(36));
+      }
+    } catch (error) {}
+
+    refreshButton.addEventListener('click', loadBoard);
+    track('page_view', window.location.href, 'Traffic launch board');
+    loadBoard();
+  </script>
+</body>
+</html>
